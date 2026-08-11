@@ -1,0 +1,159 @@
+:root {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.5;
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  padding: 2rem;
+}
+
+.centered {
+  display: grid;
+  place-items: center;
+  min-height: 80vh;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: min(22rem, 90vw);
+  padding: 1.5rem;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-radius: 0.75rem;
+}
+
+.card h1 {
+  margin: 0 0 0.5rem;
+}
+
+label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+input {
+  padding: 0.5rem;
+  font: inherit;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 0.375rem;
+  background: transparent;
+  color: inherit;
+}
+
+button {
+  margin-top: 0.5rem;
+  padding: 0.55rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  border: 0;
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.error {
+  margin: 0;
+  min-height: 1.5em;
+  font-size: 0.85rem;
+  color: #b3261e;
+}
+
+@media (prefers-color-scheme: dark) {
+  .error {
+    color: #f2b8b5;
+  }
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.bar h1 {
+  margin-right: auto;
+}
+
+.badge {
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  border-radius: 0.25rem;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+}
+
+dt {
+  font-weight: 600;
+}
+
+dd {
+  margin: 0;
+}
+
+.muted {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  opacity: 0.7;
+}
+
+a.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.sso {
+  margin-top: 0.35rem;
+  padding: 0.6rem 1rem;
+  font-weight: 600;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 0.375rem;
+}
+
+.sso:hover {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.75rem 0 0.25rem;
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: color-mix(in srgb, currentColor 25%, transparent);
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+code {
+  font-size: 0.85em;
+}

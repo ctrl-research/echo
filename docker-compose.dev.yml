@@ -1,0 +1,77 @@
+# Development overlay: adds a local OIDC identity provider (Dex) so the SSO
+# flow can be exercised without registering an OAuth client anywhere.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db dex
+#   make dev-server
+#
+# Then open http://localhost:8080 and sign in with jonathan@example.com /
+# password. Set ECHO_DEV_BASE_URL (for both commands) to use another port.
+#
+# The issuer uses 127.0.0.1 rather than localhost because Dex normalises the
+# advertised issuer to the numeric form. An OIDC issuer is compared verbatim,
+# so configuring "localhost" here would make go-oidc reject the discovery
+# document over a mismatch that looks identical to a human.
+#
+# Echo runs on the host here rather than in a container. An OIDC issuer is an
+# exact-match identifier, and the same URL has to work for two different
+# resolvers: server-side discovery and the browser redirect. Only "localhost"
+# satisfies both — from inside a container it would mean the container itself.
+#
+# The Dex config is inline rather than a bind-mounted file so the overlay is
+# self-contained and cannot break on a stale VM mount.
+
+services:
+  dex:
+    image: dexidp/dex:v2.44.0
+    restart: unless-stopped
+    # Required: without it the entrypoint loads the image's bundled
+    # config.docker.yaml instead, which has different clients and a sqlite
+    # store — the symptom is a confusing "Invalid client_id".
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    ports:
+      - "5556:5556"
+    configs:
+      - source: dex_config
+        target: /etc/dex/config.yaml
+
+  db:
+    ports:
+      # Non-default host port: 5432 is often already taken by a local Postgres.
+      - "55432:5432"
+
+configs:
+  dex_config:
+    content: |
+      issuer: http://127.0.0.1:5556/dex
+
+      storage:
+        type: memory
+
+      web:
+        http: 0.0.0.0:5556
+
+      oauth2:
+        # Skip the consent screen; there is nothing to review on a dev instance.
+        skipApprovalScreen: true
+
+      staticClients:
+        - id: echo
+          secret: echo-dev-secret
+          name: Echo
+          redirectURIs:
+            # Overridable so the dev instance can move off 8080 when something
+            # else already owns it. Must match ECHO_BASE_URL exactly.
+            - ${ECHO_DEV_BASE_URL:-http://localhost:8080}/auth/oidc/callback
+
+      enablePasswordDB: true
+      staticPasswords:
+        # Password is "password" for both; the bcrypt hash is the one from
+        # Dex's own example configuration.
+        - email: "jonathan@example.com"
+          hash: "$$2a$$10$$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+          username: "Jonathan"
+          userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
+        - email: "second@example.com"
+          hash: "$$2a$$10$$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+          username: "Second User"
+          userID: "1f1e0a6a-0000-4000-8000-000000000002"

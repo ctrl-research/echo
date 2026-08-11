@@ -1,0 +1,11 @@
+.git
+.github
+bin
+cache
+music
+docs
+node_modules
+web/node_modules
+internal/webui/dist
+*.md
+.env

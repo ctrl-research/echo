@@ -1,0 +1,83 @@
+name: echo
+
+services:
+  echo:
+    build:
+      context: .
+      args:
+        VERSION: ${ECHO_VERSION:-dev}
+    image: echo:latest
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${ECHO_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ECHO_DATABASE_URL: postgres://echo:${POSTGRES_PASSWORD:-echo}@db:5432/echo?sslmode=disable
+      # Library roots are colon-free, comma-separated. The first writable root
+      # receives promoted YouTube downloads.
+      ECHO_LIBRARY_ROOTS: /music,/library/downloads
+      ECHO_CACHE_DIR: /cache
+      ECHO_YT_CACHE_TTL: 48h
+      ECHO_YT_CACHE_MAX_BYTES: 5GB
+      ECHO_TRANSCODE_CACHE_MAX_BYTES: 10GB
+      ECHO_LOG_LEVEL: ${ECHO_LOG_LEVEL:-info}
+      ECHO_SESSION_TTL: ${ECHO_SESSION_TTL:-720h}
+      # Public URL. OAuth redirect URIs derive from it, and session cookies are
+      # marked Secure when it is https.
+      ECHO_BASE_URL: ${ECHO_BASE_URL:-http://localhost:8080}
+      # Sign-in providers. Configure at least one, or nobody can sign in.
+      ECHO_GOOGLE_CLIENT_ID: ${ECHO_GOOGLE_CLIENT_ID:-}
+      ECHO_GOOGLE_CLIENT_SECRET: ${ECHO_GOOGLE_CLIENT_SECRET:-}
+      ECHO_OIDC_ISSUER_URL: ${ECHO_OIDC_ISSUER_URL:-}
+      ECHO_OIDC_CLIENT_ID: ${ECHO_OIDC_CLIENT_ID:-}
+      ECHO_OIDC_CLIENT_SECRET: ${ECHO_OIDC_CLIENT_SECRET:-}
+      ECHO_OIDC_NAME: ${ECHO_OIDC_NAME:-}
+      # Who may create an account after the first user claims the instance.
+      ECHO_ALLOWED_EMAILS: ${ECHO_ALLOWED_EMAILS:-}
+      # Email/password accounts. Off by default; SSO is the intended path.
+      ECHO_LOCAL_AUTH: ${ECHO_LOCAL_AUTH:-false}
+      ECHO_ADMIN_EMAIL: ${ECHO_ADMIN_EMAIL:-}
+      ECHO_ADMIN_PASSWORD: ${ECHO_ADMIN_PASSWORD:-}
+    volumes:
+      # Read-only by design: Echo never mutates library files. Metadata edits
+      # live in track_overrides. See docs/design.md.
+      - ${ECHO_MUSIC_DIR:-./music}:/music:ro
+      - echo-cache:/cache
+      - echo-library:/library/downloads
+    healthcheck:
+      # A real GET, not `wget --spider`: busybox's spider mode issues HEAD,
+      # which is a needlessly narrow thing for a healthcheck to depend on.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  db:
+    # 18+ is required: the schema uses the built-in uuidv7().
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: echo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-echo}
+      POSTGRES_DB: echo
+    volumes:
+      # postgres:18+ stores data in a major-version subdirectory and expects
+      # the mount one level up, at /var/lib/postgresql. Mounting the old
+      # .../data path makes the image refuse to start. This layout is also what
+      # lets `pg_upgrade --link` work across a future major version bump.
+      - echo-db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U echo -d echo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  echo-db:
+  echo-cache:
+  echo-library:

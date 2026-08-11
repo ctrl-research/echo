@@ -1,0 +1,13 @@
+# Build artifacts
+/bin/
+/internal/webui/dist/
+/openapi.yaml
+
+# Local runtime data
+/cache/
+/music/
+.env
+
+# Editor / OS
+.DS_Store
+*.swp

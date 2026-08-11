@@ -1,0 +1,28 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema: internal/db/migrations
+    queries: internal/db/queries
+    gen:
+      go:
+        package: dbgen
+        out: internal/db/dbgen
+        sql_package: pgx/v5
+        emit_interface: true
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        overrides:
+          # Plain Go types instead of the pgtype wrappers sqlc would otherwise
+          # pick for pgx/v5, for NOT NULL columns only.
+          #
+          # Nullable columns are deliberately left alone. Combining an override
+          # with emit_pointers_for_null_types is unreliable: "*time.Time"
+          # yields **time.Time, and "time.Time" yields a bare time.Time that
+          # cannot represent NULL at all. Nullable timestamps therefore stay as
+          # pgtype.Timestamptz, whose .Valid field is explicit. Handlers map
+          # dbgen rows to API types anyway, so the pgx type does not escape the
+          # database layer.
+          - db_type: "uuid"
+            go_type: "github.com/google/uuid.UUID"
+          - db_type: "timestamptz"
+            go_type: "time.Time"

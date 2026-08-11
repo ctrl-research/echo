@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.26"
+  NODE_VERSION: "24"
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Verify formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt required for: $unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: |
+          go vet ./...
+          go vet -tags integration ./...
+
+      - name: Unit tests
+        run: go test -race ./...
+
+      # Generated code is committed, so a drift check catches a query edited
+      # without regenerating.
+      - name: Check sqlc output is current
+        run: |
+          go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
+          git diff --exit-code -- internal/db/dbgen \
+            || { echo "::error::sqlc output is stale; run 'make sqlc'"; exit 1; }
+
+  integration:
+    name: Integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # testcontainers uses the Docker daemon preinstalled on the runner.
+      #
+      # -v plus a SKIP check because a skipped test still reports "ok". An
+      # earlier version of the scanner suite shelled out to ffmpeg and skipped
+      # when it was missing, so the whole suite silently passed without running
+      # anything. Tests here must be hermetic; a skip is a failure.
+      - name: Integration tests
+        run: |
+          set -o pipefail
+          go test -race -tags integration -timeout 15m -v ./... 2>&1 | tee test.log
+          if grep -q '^--- SKIP' test.log; then
+            echo "::error::tests were skipped; integration tests must be hermetic"
+            grep '^--- SKIP' test.log
+            exit 1
+          fi
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+        working-directory: web
+
+      # The client's API types are generated from the server's spec, so the
+      # spec has to be produced here rather than committed.
+      - name: Generate API types
+        run: |
+          go run ./cmd/echo openapi > openapi.yaml
+          cd web && npm run gen:api
+
+      - name: Check generated types are current
+        run: |
+          git diff --exit-code -- web/src/api/schema.d.ts \
+            || { echo "::error::client API types are stale; run 'make types'"; exit 1; }
+
+      - name: Build client
+        run: npm run build
+        working-directory: web
+
+  image:
+    name: Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
