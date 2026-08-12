@@ -5,8 +5,9 @@ short-lived cache, and runs as an installable PWA with offline playback.
 
 Design and rationale: [`docs/design.md`](docs/design.md).
 
-**Status: M5.** Authentication (Google + OIDC), the library scanner, the library
-API, playback, and per-user state — playlists, favourites, and play history.
+**Status: M6.** Authentication (Google + OIDC), the library scanner, the library
+API, playback, per-user state, and YouTube — search, cached playback, and
+promotion into the library.
 
 ## Stack
 
@@ -115,6 +116,8 @@ grows past a single replica — see "Scaling, honestly" in the design doc.
 | `ECHO_CACHE_DIR` | `./cache` | Derived data; disposable |
 | `ECHO_YT_CACHE_TTL` | `48h` | Sliding window from last access |
 | `ECHO_YT_CACHE_MAX_BYTES` | `5GB` | LRU eviction above this |
+| `ECHO_YT_MAX_LIFETIME` | `336h` | Ceiling on how far the sliding TTL can reach |
+| `ECHO_YT_COOKIES_FILE` | — | `cookies.txt` for yt-dlp, if your address is challenged |
 | `ECHO_TRANSCODE_CACHE_MAX_BYTES` | `10GB` | LRU eviction above this |
 | `ECHO_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `ECHO_BASE_URL` | `http://localhost:8080` | Public URL. OAuth redirect URIs derive from it; cookies are `Secure` when it is https. No trailing slash |
@@ -168,6 +171,40 @@ reverts to the file's own tags.
 Everything except `/health`, `/auth/providers`, and `/auth/login` requires a
 session. Authorisation is default-deny: a new endpoint is private until it is
 deliberately added to the public allowlist.
+
+## YouTube
+
+`GET /youtube/search` runs a metadata-only yt-dlp query. Playing a result
+downloads it to the cache first and then serves it on the ordinary
+`ServeContent` path, so seeking works. Proxying the CDN URL instead would leave
+the track unseekable — the length is unknown and the stream cannot be rewound —
+and those URLs are IP-bound and expire within hours.
+
+Nothing on this path carries ads: `bestaudio` is the raw audio track, and ads
+live in the video delivery layer. `--sponsorblock-remove` handles the different
+problem of host-read sponsorships baked into the audio itself.
+
+**The cache TTL slides on access**, 48 hours by default, capped at 14 days from
+download so one much-played item cannot hold space forever. A sweep every 15
+minutes drops expired items, then trims least-recently-used until the cache fits
+`ECHO_YT_CACHE_MAX_BYTES`.
+
+**Promoting** copies a cached item into the writable library root, where the
+scanner picks it up as an ordinary track. Promoted items are exempt from
+eviction — their bytes live under a library root now, not in the disposable
+cache. The copy is not a move, so playback continues uninterrupted until the
+scan completes.
+
+Downloading from YouTube is contrary to its terms of service. This is a personal
+self-hosted tool; the choice is yours to make.
+
+### When it breaks
+
+YouTube breaks extraction every few weeks, so `GET /youtube` reports the yt-dlp
+version in use — the first question when search starts failing. Update by
+rebuilding the image. If your address is rate-limited or challenged, point
+`ECHO_YT_COOKIES_FILE` at an exported `cookies.txt`; residential connections
+usually do not need it.
 
 ## Shuffle
 

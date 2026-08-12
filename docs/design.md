@@ -738,7 +738,7 @@ lifecycle.
 | **M3** ✅ | Library API + search. tsvector + trigram, facets, keyset pagination, overrides | Filter by genre/artist/album; `radiohed` finds Radiohead; edits persist to overrides |
 | **M4** ✅ | Streaming + player. ServeContent, transcode cache, React shell, virtualized lists, Media Session | Full playback with seeking on desktop and mobile browsers |
 | **M5** ✅ | Playlists, favorites, history | Per-user state working across two accounts |
-| **M6** | YouTube. Search, download-to-cache, TTL janitor, promote | Play a YouTube result; it expires on schedule; promotion survives eviction |
+| **M6** ✅ | YouTube. Search, download-to-cache, TTL janitor, promote | Play a YouTube result; it expires on schedule; promotion survives eviction |
 | **M7** | PWA offline. Workbox, Cache API audio, Range-slicing SW, quota UI | Airplane mode plays marked albums, seeking included |
 | **M8** | Polish. Admin UI, transcode profiles, scrobble targets, keyboard shortcuts | — |
 
