@@ -16,6 +16,7 @@ type Querier interface {
 	// The canonical multi-worker claim. SKIP LOCKED lets every worker drain the
 	// queue concurrently without contending on the same row or double-claiming.
 	ClaimJob(ctx context.Context) (Job, error)
+	ClearTrackOverride(ctx context.Context, trackID uuid.UUID) error
 	// Clearing dedupe_key on completion lets the same logical work be enqueued
 	// again later; leaving it would make the unique index reject every future
 	// enqueue for that key.
@@ -56,12 +57,15 @@ type Querier interface {
 	// Move detection: a file whose content hash matches a row that is now missing,
 	// or whose recorded path no longer exists, is the same track relocated.
 	FindTrackByHash(ctx context.Context, arg FindTrackByHashParams) (Track, error)
+	GetAlbum(ctx context.Context, id uuid.UUID) (GetAlbumRow, error)
+	GetArtist(ctx context.Context, id uuid.UUID) (GetArtistRow, error)
 	GetJob(ctx context.Context, id uuid.UUID) (Job, error)
 	GetLibraryRoot(ctx context.Context, id uuid.UUID) (LibraryRoot, error)
 	// Resolves a bearer token to its session and owner in one round trip, and
 	// filters out expired sessions and disabled accounts so callers cannot forget
 	// to. Returning no row is the only "not authenticated" signal handlers need.
 	GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (GetSessionByTokenHashRow, error)
+	GetTrack(ctx context.Context, id uuid.UUID) (GetTrackRow, error)
 	GetTrackByPath(ctx context.Context, arg GetTrackByPathParams) (Track, error)
 	GetUser(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
@@ -76,12 +80,36 @@ type Querier interface {
 	// left alone so a different provider account cannot claim an existing user.
 	LinkGoogleSub(ctx context.Context, arg LinkGoogleSubParams) (User, error)
 	LinkOIDCSub(ctx context.Context, arg LinkOIDCSubParams) (User, error)
+	// Disc then track number, which is the only order an album makes sense in.
+	ListAlbumTracks(ctx context.Context, albumID pgtype.UUID) ([]ListAlbumTracksRow, error)
+	// ---- albums -------------------------------------------------------------------
+	ListAlbums(ctx context.Context, arg ListAlbumsParams) ([]ListAlbumsRow, error)
+	// ---- artists ------------------------------------------------------------------
+	// Only artists with at least one live track: reconciliation can leave rows
+	// behind, and a browse list full of entries that match nothing is noise.
+	ListArtists(ctx context.Context, arg ListArtistsParams) ([]ListArtistsRow, error)
+	// ---- genres -------------------------------------------------------------------
+	ListGenres(ctx context.Context) ([]ListGenresRow, error)
 	ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, error)
 	ListLibraryRoots(ctx context.Context) ([]LibraryRoot, error)
 	// ---- tracks -----------------------------------------------------------------
 	// Returns just enough to decide whether a file changed, without loading whole
 	// rows for a library that is mostly unchanged.
 	ListTrackStatsForRoot(ctx context.Context, rootID uuid.UUID) ([]ListTrackStatsForRootRow, error)
+	// Read paths for browsing and searching the library.
+	//
+	// Every listing is keyset-paginated on (sort key, id). Offset pagination
+	// degrades badly past a few thousand rows and double-serves items when the
+	// library changes mid-scroll, which it does constantly while a scan runs.
+	// ---- tracks -------------------------------------------------------------------
+	// The one query behind GET /tracks. Each filter is inert when its parameter is
+	// NULL, so one statement serves every combination the API allows rather than a
+	// combinatorial set of near-identical queries.
+	//
+	// The cursor predicate is a row comparison rather than OR-ed inequalities:
+	// (sort_key, id) > (last_sort_key, last_id) uses the composite index directly,
+	// where the expanded form usually will not.
+	ListTracks(ctx context.Context, arg ListTracksParams) ([]ListTracksRow, error)
 	ListUsers(ctx context.Context) ([]User, error)
 	MarkScanFinished(ctx context.Context, arg MarkScanFinishedParams) error
 	MarkScanStarted(ctx context.Context, id uuid.UUID) error
@@ -89,6 +117,12 @@ type Querier interface {
 	// Relocating a track keeps its id, and therefore its playlist entries and play
 	// history, across a library reorganisation.
 	MoveTrack(ctx context.Context, arg MoveTrackParams) (Track, error)
+	// Rebuilds a track's search text from its effective values.
+	//
+	// This is the single definition of the haystack, used by both the scanner and
+	// the override editor. Assembling it in Go as well would let the two drift, and
+	// the symptom would be a track that is unfindable by the name shown for it.
+	RebuildTrackSearch(ctx context.Context, id uuid.UUID) error
 	ReplaceTrackGenres(ctx context.Context, arg ReplaceTrackGenresParams) error
 	// Requeues jobs left 'running' by a process that died. Without this a crash
 	// during a scan strands the work forever, since nothing else revisits a row
@@ -97,6 +131,24 @@ type Querier interface {
 	// A job below its attempt ceiling goes back to 'queued' with a backoff;
 	// otherwise it is terminal.
 	RetryOrFailJob(ctx context.Context, arg RetryOrFailJobParams) (Job, error)
+	SearchAlbums(ctx context.Context, arg SearchAlbumsParams) ([]SearchAlbumsRow, error)
+	SearchArtists(ctx context.Context, arg SearchArtistsParams) ([]SearchArtistsRow, error)
+	// ---- search -------------------------------------------------------------------
+	// Ranked full-text search. websearch_to_tsquery accepts what a person actually
+	// types — bare words, quoted phrases, "or" — without erroring on punctuation
+	// the way to_tsquery does.
+	SearchTracksExact(ctx context.Context, arg SearchTracksExactParams) ([]SearchTracksExactRow, error)
+	// Trigram fallback, for when exact matching finds too little: typos
+	// ("radiohed"), partial words, and missing diacritics. Deliberately a separate
+	// query rather than an OR — combining them would stop Postgres using either
+	// index and turn every search into a sequential scan.
+	//
+	// word_similarity, not similarity: the latter compares whole strings, so a
+	// short query against a long haystack ("Airbag Radiohead OK Computer
+	// Alternative Rock") scores far below any usable threshold and matches
+	// nothing. The <% operator asks instead whether the query closely matches some
+	// run of words *inside* the haystack, which is what a search box means.
+	SearchTracksFuzzy(ctx context.Context, arg SearchTracksFuzzyParams) ([]SearchTracksFuzzyRow, error)
 	// Queries with no table dependencies. Their real job in M0 is to keep the
 	// sqlc pipeline exercised before the schema exists; ServerTime is also a
 	// genuine readiness probe, since it proves a round trip rather than just a
@@ -123,12 +175,19 @@ type Querier interface {
 	// to one artist. ON CONFLICT DO UPDATE rather than DO NOTHING because a bare
 	// DO NOTHING returns no row on conflict, which would cost a second round trip
 	// on the overwhelmingly common already-exists path.
+	// Variants that normalise together share a row, so one of them has to supply
+	// the display name. Keeping whichever inserted first makes that a race between
+	// scanner workers — the same library could show "The Beatles" or "Beatles"
+	// depending on file order. Preferring the longer form is both deterministic and
+	// usually the more complete name.
 	UpsertArtist(ctx context.Context, arg UpsertArtistParams) (Artist, error)
 	UpsertCoverArt(ctx context.Context, arg UpsertCoverArtParams) (CoverArt, error)
 	UpsertGenre(ctx context.Context, name string) (Genre, error)
 	// ---- roots -----------------------------------------------------------------
 	UpsertLibraryRoot(ctx context.Context, arg UpsertLibraryRootParams) (LibraryRoot, error)
 	UpsertTrack(ctx context.Context, arg UpsertTrackParams) (Track, error)
+	// ---- overrides ----------------------------------------------------------------
+	UpsertTrackOverride(ctx context.Context, arg UpsertTrackOverrideParams) (TrackOverride, error)
 	// Written in the same transaction as the track, from the effective values.
 	UpsertTrackSearch(ctx context.Context, arg UpsertTrackSearchParams) error
 }

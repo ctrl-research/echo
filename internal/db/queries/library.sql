@@ -29,17 +29,26 @@ WHERE id = $1;
 -- DO NOTHING returns no row on conflict, which would cost a second round trip
 -- on the overwhelmingly common already-exists path.
 
+-- Variants that normalise together share a row, so one of them has to supply
+-- the display name. Keeping whichever inserted first makes that a race between
+-- scanner workers — the same library could show "The Beatles" or "Beatles"
+-- depending on file order. Preferring the longer form is both deterministic and
+-- usually the more complete name.
 -- name: UpsertArtist :one
 INSERT INTO artists (name, norm_name, sort_name)
 VALUES ($1, $2, sqlc.narg(sort_name)::text)
-ON CONFLICT (norm_name) DO UPDATE SET name = artists.name
+ON CONFLICT (norm_name) DO UPDATE
+SET name = CASE WHEN length(EXCLUDED.name) > length(artists.name)
+                THEN EXCLUDED.name ELSE artists.name END
 RETURNING *;
 
 -- name: UpsertAlbum :one
 INSERT INTO albums (name, norm_name, album_artist_id, year, cover_art_id)
 VALUES ($1, $2, sqlc.narg(album_artist_id)::uuid, sqlc.narg(year)::int, sqlc.narg(cover_art_id)::uuid)
 ON CONFLICT (norm_name, album_artist_id) DO UPDATE
-SET year         = COALESCE(albums.year, EXCLUDED.year),
+SET name         = CASE WHEN length(EXCLUDED.name) > length(albums.name)
+                        THEN EXCLUDED.name ELSE albums.name END,
+    year         = COALESCE(albums.year, EXCLUDED.year),
     cover_art_id = COALESCE(albums.cover_art_id, EXCLUDED.cover_art_id)
 RETURNING *;
 
