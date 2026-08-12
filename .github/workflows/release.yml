@@ -1,0 +1,97 @@
+name: Release
+
+# Publishes the container image to GHCR.
+#
+# Separate from ci.yml deliberately: CI builds the image on every pull request
+# to prove it still builds, and must never push. This workflow only runs where
+# pushing is correct — a merge to main, or a version tag.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  # So a broken publish can be retried without an empty commit.
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ${{ github.repository }}
+
+jobs:
+  image:
+    name: Publish image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required for pushing to GHCR with GITHUB_TOKEN. Without it the push
+      # fails with a 403 that reads like a credential problem.
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # arm64 is emulated only for the runtime stage; the Go build and the web
+      # build run natively on the runner and cross-compile.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=Echo
+            org.opencontainers.image.description=Self-hosted music server with local library and YouTube streaming
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          # amd64 and arm64 because the cluster pins neither, and a homelab is
+          # as likely to be running Ampere or a Pi as an x86 box.
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_type == 'tag' && github.ref_name || format('main-{0}', github.sha) }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ github.event.repository.updated_at }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Off deliberately: attestations add extra entries to the image index,
+          # and some Kubernetes tooling resolves the wrong one when selecting a
+          # platform. A plain multi-arch index is the predictable choice.
+          provenance: false
+          sbom: false
+
+      - name: Summary
+        run: |
+          {
+            echo "### Published"
+            echo
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo
+            echo "Pull with:"
+            echo '```sh'
+            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

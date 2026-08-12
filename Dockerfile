@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # ---- web client -------------------------------------------------------------
-FROM node:24-alpine AS web
+# Pinned to the build platform: the output is JavaScript and CSS, identical for
+# every target, so emulating this stage per architecture buys nothing.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -10,7 +12,10 @@ COPY web/ ./
 RUN mkdir -p /src/internal/webui && npm run build
 
 # ---- server -----------------------------------------------------------------
-FROM golang:1.26-alpine AS build
+# Also pinned to the build platform. Go cross-compiles, so a multi-arch build
+# runs the compiler natively and sets GOARCH — far cheaper than emulating the
+# whole toolchain under QEMU for each target.
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
@@ -21,9 +26,13 @@ COPY --from=web /src/internal/webui/dist internal/webui/dist
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
+# Supplied by buildx for each requested platform.
+ARG TARGETOS
+ARG TARGETARCH
 ENV CGO_ENABLED=0
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -tags embedweb \
       -ldflags "-s -w \
         -X github.com/jonathanng/echo/internal/version.Version=${VERSION} \
