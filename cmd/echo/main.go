@@ -30,6 +30,7 @@ import (
 	"github.com/jonathanng/echo/internal/media"
 	"github.com/jonathanng/echo/internal/version"
 	"github.com/jonathanng/echo/internal/webui"
+	"github.com/jonathanng/echo/internal/youtube"
 )
 
 func main() {
@@ -158,6 +159,23 @@ func run(cmd string) error {
 			"baseURL", cfg.BaseURL)
 	}
 
+	// The writable root doubles as where promoted YouTube downloads land.
+	ytSvc := youtube.NewService(pool, blobs,
+		youtube.NewCLI(log, cfg.YTCookiesFile), queue, log, youtube.Options{
+			TTL:         cfg.YTCacheTTL,
+			MaxLifetime: cfg.YTMaxLifetime,
+			MaxBytes:    cfg.YTCacheMaxBytes,
+			PromoteDir:  writableRoot,
+		})
+	ytSvc.RegisterHandlers()
+	if ytSvc.Available() {
+		log.Info("youtube support enabled", "yt-dlp", ytSvc.Version(ctx),
+			"cacheTTL", cfg.YTCacheTTL, "cacheMax", cfg.YTCacheMaxBytes)
+		// Expiry is a time-based event with nothing to trigger it, so something
+		// has to look periodically.
+		go ytSvc.EvictLoop(ctx, 15*time.Minute)
+	}
+
 	mediaSvc := media.NewService(pool, blobs, log)
 	if !mediaSvc.TranscodingAvailable() {
 		log.Warn("ffmpeg is unavailable; only natively playable formats can be " +
@@ -170,6 +188,7 @@ func run(cmd string) error {
 		Auth:    authSvc,
 		Library: lib,
 		Media:   mediaSvc,
+		YouTube: ytSvc,
 		WebFS:   webui.FS(),
 	})
 

@@ -221,7 +221,12 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   _sync: (patch) => set(patch),
 }));
 
-export function streamURL(trackId: string): string {
+export function streamURL(trackId: string, queueId = ""): string {
+  // A YouTube item is served from the cache rather than a library root, and is
+  // keyed by video id rather than track id.
+  if (queueId.startsWith("youtube:")) {
+    return `/api/v1/youtube/${trackId}/stream`;
+  }
   return `/api/v1/tracks/${trackId}/stream`;
 }
 

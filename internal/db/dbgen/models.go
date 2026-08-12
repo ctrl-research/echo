@@ -143,6 +143,51 @@ func (ns NullUserRole) Value() (driver.Value, error) {
 	return string(ns.UserRole), nil
 }
 
+type YtState string
+
+const (
+	YtStatePending     YtState = "pending"
+	YtStateDownloading YtState = "downloading"
+	YtStateReady       YtState = "ready"
+	YtStateFailed      YtState = "failed"
+	YtStateEvicted     YtState = "evicted"
+)
+
+func (e *YtState) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = YtState(s)
+	case string:
+		*e = YtState(s)
+	default:
+		return fmt.Errorf("unsupported scan type for YtState: %T", src)
+	}
+	return nil
+}
+
+type NullYtState struct {
+	YtState YtState
+	Valid   bool // Valid is true if YtState is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullYtState) Scan(value interface{}) error {
+	if value == nil {
+		ns.YtState, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.YtState.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullYtState) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.YtState), nil
+}
+
 type Album struct {
 	ID            uuid.UUID
 	Name          string
@@ -344,4 +389,23 @@ type User struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	DisabledAt   pgtype.Timestamptz
+}
+
+type YtItem struct {
+	ID              uuid.UUID
+	VideoID         string
+	Title           string
+	Uploader        string
+	DurationMs      *int32
+	ThumbnailUrl    *string
+	State           YtState
+	Error           *string
+	BlobKey         *string
+	Bytes           *int64
+	CachedAt        pgtype.Timestamptz
+	LastAccessedAt  pgtype.Timestamptz
+	ExpiresAt       pgtype.Timestamptz
+	PromotedTrackID pgtype.UUID
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }

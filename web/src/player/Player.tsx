@@ -21,12 +21,12 @@ export default function Player() {
   useEffect(() => {
     const el = audio.current;
     if (!el || !track) return;
-    const wanted = streamURL(track.id);
+    const wanted = streamURL(track.id, state.queueId);
     if (!el.src.endsWith(wanted)) {
       el.src = wanted;
       el.load();
     }
-  }, [track?.id]);
+  }, [track?.id, state.queueId]);
 
   useEffect(() => {
     const el = audio.current;
@@ -74,6 +74,9 @@ export default function Player() {
   }, [track?.id]);
 
   useEffect(() => {
+    // YouTube items have no library track row, so there is nothing to report
+    // a play against.
+    if (state.queueId.startsWith("youtube:")) return;
     if (!track || reportedFor.current === track.id) return;
     const durationSec = state.duration || (track.durationMs ?? 0) / 1000;
     if (!durationSec) return;

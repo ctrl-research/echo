@@ -170,6 +170,48 @@ func (s *Service) serveTranscoded(w http.ResponseWriter, r *http.Request, row db
 	return nil
 }
 
+// ServeBlobAudio streams audio that lives in the blob store rather than under a
+// library root — YouTube's cache. Shares the ServeContent path, so range
+// requests and seeking behave identically to a library track.
+func (s *Service) ServeBlobAudio(w http.ResponseWriter, r *http.Request, key string) error {
+	if path, ok := s.blobs.LocalPath(key); ok {
+		f, err := os.Open(path)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return ErrNotFound
+			}
+			return err
+		}
+		defer f.Close()
+		st, err := f.Stat()
+		if err != nil {
+			return err
+		}
+		writeAudioHeaders(w, transcodeMIME, `"`+key+`"`)
+		http.ServeContent(w, r, filepath.Base(path), st.ModTime(), f)
+		return nil
+	}
+
+	reader, info, err := s.blobs.Open(r.Context(), key)
+	if err != nil {
+		if errors.Is(err, blobstore.ErrNotFound) {
+			return ErrNotFound
+		}
+		return err
+	}
+	defer reader.Close()
+	writeAudioHeaders(w, transcodeMIME, `"`+key+`"`)
+	http.ServeContent(w, r, key, info.ModTime, reader)
+	return nil
+}
+
+func writeAudioHeaders(w http.ResponseWriter, mime, etag string) {
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Cache-Control", "private, max-age=31536000")
+	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("ETag", etag)
+}
+
 // ServeCoverArt writes a cover image, by cover-art id.
 func (s *Service) ServeCoverArt(w http.ResponseWriter, r *http.Request, artID uuid.UUID) error {
 	row, err := s.q.GetCoverArt(r.Context(), artID)

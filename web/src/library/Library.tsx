@@ -11,7 +11,7 @@ type PlaylistEntry = components["schemas"]["PlaylistEntryDTO"];
 type Artist = components["schemas"]["ArtistDTO"];
 type Genre = components["schemas"]["GenreDTO"];
 
-type Tab = "albums" | "artists" | "tracks" | "playlists" | "favourites";
+type Tab = "albums" | "artists" | "tracks" | "playlists" | "favourites" | "youtube";
 
 export default function Library() {
   const [tab, setTab] = useState<Tab>("albums");
@@ -46,7 +46,7 @@ export default function Library() {
           ))}
         </select>
         <nav className="tabs">
-          {(["albums", "artists", "tracks", "playlists", "favourites"] as Tab[]).map((t) => (
+          {(["albums", "artists", "tracks", "playlists", "favourites", "youtube"] as Tab[]).map((t) => (
             <button
               key={t}
               className={tab === t ? "active" : ""}
@@ -69,6 +69,8 @@ export default function Library() {
         <Playlists />
       ) : tab === "favourites" ? (
         <Favourites />
+      ) : tab === "youtube" ? (
+        <YouTube />
       ) : (
         <Tracks genre={genre} />
       )}
@@ -520,4 +522,152 @@ function Favourites() {
     api.GET("/favorites").then(({ data }) => setTracks((data?.tracks ?? []) as Track[]));
   }, []);
   return <TrackList tracks={tracks} listId="favourites" emptyMessage="No favourites yet — tap ♡ on a track." />;
+}
+
+// ---- youtube ---------------------------------------------------------------------
+
+type YTResult = components["schemas"]["YTResultDTO"];
+type YTItem = components["schemas"]["YTItemDTO"];
+
+function YouTube() {
+  const [available, setAvailable] = useState<boolean | null>(null);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<YTResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Cache state per video, polled while a download is in flight.
+  const [items, setItems] = useState<Record<string, YTItem>>({});
+
+  useEffect(() => {
+    api.GET("/youtube").then(({ data }) => setAvailable(data?.available ?? false));
+  }, []);
+
+  async function search(e: React.FormEvent) {
+    e.preventDefault();
+    if (!query.trim()) return;
+    setSearching(true);
+    setError(null);
+    const { data, error } = await api.GET("/youtube/search", {
+      params: { query: { q: query.trim() } },
+    });
+    setSearching(false);
+    if (error) {
+      setError("Search failed. yt-dlp may need updating.");
+      return;
+    }
+    setResults(data?.results ?? []);
+  }
+
+  // Polls one item until it stops being in flight. A download takes a second or
+  // two, so the UI shows progress rather than appearing to hang.
+  async function prepareAndPoll(r: YTResult) {
+    const { data } = await api.POST("/youtube/prepare", {
+      body: {
+        videoId: r.videoId, title: r.title, uploader: r.uploader,
+        durationMs: r.durationMs, thumbnailUrl: r.thumbnailUrl,
+      },
+    });
+    if (data) setItems((m) => ({ ...m, [r.videoId]: data }));
+
+    for (let i = 0; i < 120; i++) {
+      const { data: item } = await api.GET("/youtube/{videoId}", {
+        params: { path: { videoId: r.videoId } },
+      });
+      if (!item) break;
+      setItems((m) => ({ ...m, [r.videoId]: item }));
+      if (item.state === "ready" || item.state === "failed") return item;
+      await new Promise((res) => setTimeout(res, 1000));
+    }
+    return undefined;
+  }
+
+  async function play(r: YTResult) {
+    const item = items[r.videoId]?.state === "ready"
+      ? items[r.videoId]
+      : await prepareAndPoll(r);
+    if (!item || item.state !== "ready") return;
+
+    // A YouTube item joins the queue as a one-track list, streamed from the
+    // cache rather than from a library root.
+    usePlayer.getState().playQueue(
+      [{
+        id: r.videoId, title: item.title || r.title, artistName: item.uploader || r.uploader,
+        albumName: "YouTube", genres: [], suffix: "opus", overridden: false, favorite: false,
+        durationMs: item.durationMs,
+      } as unknown as Track],
+      0,
+      `youtube:${r.videoId}`,
+    );
+  }
+
+  async function promote(r: YTResult) {
+    const { error } = await api.POST("/youtube/{videoId}/promote", {
+      params: { path: { videoId: r.videoId } },
+    });
+    if (!error) {
+      const { data } = await api.GET("/youtube/{videoId}", {
+        params: { path: { videoId: r.videoId } },
+      });
+      if (data) setItems((m) => ({ ...m, [r.videoId]: data }));
+    }
+  }
+
+  if (available === false) {
+    return (
+      <p className="muted">
+        yt-dlp is not installed on the server, so YouTube search is unavailable.
+      </p>
+    );
+  }
+
+  return (
+    <div>
+      <form className="inline-form" onSubmit={search}>
+        <input
+          type="search"
+          value={query}
+          placeholder="Search YouTube…"
+          aria-label="Search YouTube"
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <button type="submit" disabled={searching}>
+          {searching ? "Searching…" : "Search"}
+        </button>
+      </form>
+
+      {error && <p className="error" role="alert">{error}</p>}
+
+      {results.length === 0 ? (
+        <p className="muted">Search YouTube to stream something not in your library.</p>
+      ) : (
+        <ul className="rows">
+          {results.map((r) => {
+            const item = items[r.videoId];
+            const state = item?.state ?? (r.cached ? "ready" : undefined);
+            const busy = state === "pending" || state === "downloading";
+            return (
+              <li key={r.videoId}>
+                <button className="row-button" onClick={() => void play(r)} disabled={busy}>
+                  <span className="title">{r.title}</span>
+                  <span className="muted">{r.uploader}</span>
+                  <span className="muted tabular">
+                    {r.durationMs ? formatTime(r.durationMs / 1000) : ""}
+                  </span>
+                  <span className="muted">
+                    {busy ? "downloading…" : state === "ready" ? "cached" : state === "failed" ? "failed" : ""}
+                  </span>
+                </button>
+                {state === "ready" && !item?.promoted && (
+                  <button className="icon" aria-label="Add to library" onClick={() => void promote(r)}>
+                    ⤓
+                  </button>
+                )}
+                {item?.promoted && <span className="muted">in library</span>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
 }

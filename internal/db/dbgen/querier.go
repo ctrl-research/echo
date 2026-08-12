@@ -66,6 +66,10 @@ type Querier interface {
 	// host a few milliseconds ahead produces jobs that are not yet claimable when
 	// the NOTIFY arrives, so every one of them waits for the next poll instead.
 	EnqueueJob(ctx context.Context, arg EnqueueJobParams) (Job, error)
+	// ---- eviction ------------------------------------------------------------------
+	// Promoted items are excluded everywhere in this section: their bytes live
+	// under a library root now, not in the disposable cache.
+	ExpiredYTItems(ctx context.Context) ([]YtItem, error)
 	// Move detection: a file whose content hash matches a row that is now missing,
 	// or whose recorded path no longer exists, is the same track relocated.
 	FindTrackByHash(ctx context.Context, arg FindTrackByHashParams) (Track, error)
@@ -97,6 +101,7 @@ type Querier interface {
 	// even when the user changes their email address at the provider.
 	GetUserByGoogleSub(ctx context.Context, googleSub *string) (User, error)
 	GetUserByOIDCSub(ctx context.Context, oidcSub *string) (User, error)
+	GetYTItem(ctx context.Context, videoID string) (YtItem, error)
 	IsFavorite(ctx context.Context, arg IsFavoriteParams) (bool, error)
 	LibraryStats(ctx context.Context) (LibraryStatsRow, error)
 	// Attaches a provider subject to an account found by email, so that signing in
@@ -146,9 +151,18 @@ type Querier interface {
 	// where the expanded form usually will not.
 	ListTracks(ctx context.Context, arg ListTracksParams) ([]ListTracksRow, error)
 	ListUsers(ctx context.Context) ([]User, error)
+	ListYTItems(ctx context.Context, limit int32) ([]ListYTItemsRow, error)
 	MarkScanFinished(ctx context.Context, arg MarkScanFinishedParams) error
 	MarkScanStarted(ctx context.Context, id uuid.UUID) error
 	MarkTracksMissing(ctx context.Context, ids []uuid.UUID) (int64, error)
+	MarkYTDownloading(ctx context.Context, videoID string) error
+	MarkYTEvicted(ctx context.Context, videoID string) error
+	MarkYTFailed(ctx context.Context, arg MarkYTFailedParams) error
+	// ---- promotion -----------------------------------------------------------------
+	MarkYTPromoted(ctx context.Context, arg MarkYTPromotedParams) error
+	// Both timestamps are computed server-side, for the same reason job scheduling
+	// is: the database clock is the only one that matters.
+	MarkYTReady(ctx context.Context, arg MarkYTReadyParams) (YtItem, error)
 	// Relocating a track keeps its id, and therefore its playlist entries and play
 	// history, across a library reorganisation.
 	MoveTrack(ctx context.Context, arg MoveTrackParams) (Track, error)
@@ -205,6 +219,9 @@ type Querier interface {
 	TopTracks(ctx context.Context, arg TopTracksParams) ([]TopTracksRow, error)
 	// Throttled by the caller to avoid a write on every request.
 	TouchSession(ctx context.Context, id uuid.UUID) error
+	// Sliding window: every play pushes the expiry out, capped so a single
+	// much-played item cannot hold cache space forever.
+	TouchYTItem(ctx context.Context, arg TouchYTItemParams) error
 	TrackPlayStats(ctx context.Context, arg TrackPlayStatsParams) (TrackPlayStatsRow, error)
 	// Scoped by user_id so a non-owner's update silently matches nothing rather
 	// than needing a separate ownership check that a caller could forget.
@@ -243,6 +260,10 @@ type Querier interface {
 	UpsertTrackOverride(ctx context.Context, arg UpsertTrackOverrideParams) (TrackOverride, error)
 	// Written in the same transaction as the track, from the effective values.
 	UpsertTrackSearch(ctx context.Context, arg UpsertTrackSearchParams) error
+	UpsertYTItem(ctx context.Context, arg UpsertYTItemParams) (YtItem, error)
+	YTCacheBytes(ctx context.Context) (int64, error)
+	// Least recently used first, which is the order to reclaim space in.
+	YTItemsByLRU(ctx context.Context, limit int32) ([]YtItem, error)
 }
 
 var _ Querier = (*Queries)(nil)
