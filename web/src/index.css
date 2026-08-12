@@ -332,3 +332,18 @@ select {
   .player { flex-wrap: wrap; }
   .player-scrubber { order: 10; flex-basis: 100%; }
 }
+
+.icon {
+  padding: 0.3rem 0.5rem;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.icon[aria-pressed="true"] { color: #e0658a; }
+.tracks li { display: flex; align-items: center; gap: 0.25rem; }
+.tracks li .row-button { flex: 1; }
+
+.inline-form { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+.inline-form input { flex: 1 1 16rem; }

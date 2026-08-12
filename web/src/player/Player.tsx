@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { api } from "../api/client";
 import { usePlayer, current, streamURL, artURL, formatTime } from "./store";
 
 /**
@@ -63,6 +64,29 @@ export default function Player() {
     navigator.mediaSession.setActionHandler("nexttrack", () => next());
     navigator.mediaSession.setActionHandler("previoustrack", () => previous());
   }, [track?.id]);
+
+  // Report a play once it passes the threshold, and only once per playthrough.
+  // The server re-checks against the duration it knows, so this is a hint
+  // rather than something it trusts.
+  const reportedFor = useRef<string | null>(null);
+  useEffect(() => {
+    reportedFor.current = null;
+  }, [track?.id]);
+
+  useEffect(() => {
+    if (!track || reportedFor.current === track.id) return;
+    const durationSec = state.duration || (track.durationMs ?? 0) / 1000;
+    if (!durationSec) return;
+
+    // Last.fm's rule: half the track, or four minutes, whichever comes first.
+    const needed = Math.min(durationSec / 2, 240);
+    if (state.position < needed) return;
+
+    reportedFor.current = track.id;
+    void api.POST("/plays", {
+      body: { trackId: track.id, msPlayed: Math.round(state.position * 1000) },
+    });
+  }, [state.position, track?.id, state.duration]);
 
   if (!track) return null;
 
