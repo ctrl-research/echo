@@ -395,8 +395,16 @@ handles `Range`, `If-Range`, `If-Modified-Since`, ETags, and multipart ranges
 correctly. Browsers play MP3, M4A/AAC, Opus, OGG, and FLAC natively, so this is
 the path for essentially the whole library.
 
-**Transcoding** is for unsupported codecs (WMA, WavPack, some ALAC) and for
-explicit bandwidth reduction. Transcoded output goes to a **cache file first**,
+**ServeContent does not invent an ETag.** It honours `If-None-Match` and
+`If-Range` when one is present, but supplies none of its own, so it has to be
+set explicitly or every re-listen refetches the whole track. The scanner's
+content hash is the right value: stable across restarts, different the moment
+the file changes.
+
+**Transcoding** is for unsupported codecs (WMA, WavPack, some ALAC) only. A
+bandwidth-saver profile was considered and dropped: it needs transcode profiles,
+a per-user preference, and cache keys per (track, format, bitrate), for a
+benefit that only appears on mobile data. Transcoded output goes to a **cache file first**,
 then gets served with `ServeContent` like anything else:
 
 ```
@@ -728,7 +736,7 @@ lifecycle.
 | **M1** ✅ | Auth + users. Google + OIDC sign-in (PKCE), session cookies, CSRF, allowlist, user CRUD | Sign in through a real IdP in a browser; roles enforced |
 | **M2** ✅ | Scanner. Walk, tag read, art extraction, move detection, fsnotify, `SKIP LOCKED` job queue | 50k-track library scans; moves preserve IDs; playback unaffected during a scan |
 | **M3** ✅ | Library API + search. tsvector + trigram, facets, keyset pagination, overrides | Filter by genre/artist/album; `radiohed` finds Radiohead; edits persist to overrides |
-| **M4** | Streaming + player. ServeContent, transcode cache, React shell, virtualized lists, Media Session | Full playback with seeking on desktop and mobile browsers |
+| **M4** ✅ | Streaming + player. ServeContent, transcode cache, React shell, virtualized lists, Media Session | Full playback with seeking on desktop and mobile browsers |
 | **M5** | Playlists, favorites, history | Per-user state working across two accounts |
 | **M6** | YouTube. Search, download-to-cache, TTL janitor, promote | Play a YouTube result; it expires on schedule; promotion survives eviction |
 | **M7** | PWA offline. Workbox, Cache API audio, Range-slicing SW, quota UI | Airplane mode plays marked albums, seeking included |

@@ -5,9 +5,8 @@ short-lived cache, and runs as an installable PWA with offline playback.
 
 Design and rationale: [`docs/design.md`](docs/design.md).
 
-**Status: M3.** Authentication (Google + OIDC), the library scanner, and the
-library API — browsing with filters, keyset pagination, full-text and fuzzy
-search, and metadata corrections. No playback yet.
+**Status: M4.** Authentication (Google + OIDC), the library scanner, the library
+API, and playback — range-request streaming, a queue, and a working player UI.
 
 ## Stack
 
@@ -130,6 +129,24 @@ grows past a single replica — see "Scaling, honestly" in the design doc.
 
 Library files are mounted read-only and are never modified. Metadata edits are
 stored in the database and applied at read time.
+
+## Streaming
+
+`GET /tracks/{id}/stream` opens the original file and hands it to
+`http.ServeContent`, which implements Range, `If-Range`, `If-Modified-Since`,
+and multipart ranges correctly. Seeking in a browser is entirely a property of
+getting those right.
+
+Originals are served untouched for MP3, M4A, FLAC, OGG, Opus, and WAV — which is
+essentially any real library, and transcoding FLAC would throw away the quality
+that is the reason to keep it. Anything else (WMA, WavPack, Musepack) is
+converted to Opus **into a cache file first**, then served on the same path.
+Piping ffmpeg straight to the response would make the track unseekable: the
+length is unknown and the stream cannot be rewound. Without ffmpeg installed,
+those formats return `415` and the rest of the library is unaffected.
+
+ETags come from the scanner's content hash, so a re-listen is a `304` rather
+than a fresh download.
 
 ## Library API
 
