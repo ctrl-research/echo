@@ -58,7 +58,11 @@ type Querier interface {
 	// or whose recorded path no longer exists, is the same track relocated.
 	FindTrackByHash(ctx context.Context, arg FindTrackByHashParams) (Track, error)
 	GetAlbum(ctx context.Context, id uuid.UUID) (GetAlbumRow, error)
+	// Album art is requested by album far more often than by its own id, so this
+	// saves the client a lookup it would otherwise always have to make first.
+	GetAlbumCoverArt(ctx context.Context, id uuid.UUID) (GetAlbumCoverArtRow, error)
 	GetArtist(ctx context.Context, id uuid.UUID) (GetArtistRow, error)
+	GetCoverArt(ctx context.Context, id uuid.UUID) (GetCoverArtRow, error)
 	GetJob(ctx context.Context, id uuid.UUID) (Job, error)
 	GetLibraryRoot(ctx context.Context, id uuid.UUID) (LibraryRoot, error)
 	// Resolves a bearer token to its session and owner in one round trip, and
@@ -67,6 +71,10 @@ type Querier interface {
 	GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (GetSessionByTokenHashRow, error)
 	GetTrack(ctx context.Context, id uuid.UUID) (GetTrackRow, error)
 	GetTrackByPath(ctx context.Context, arg GetTrackByPathParams) (Track, error)
+	// Everything needed to serve one track's bytes, in a single round trip: the
+	// root path and relative path that locate the file, plus the metadata the
+	// response headers need.
+	GetTrackForStream(ctx context.Context, id uuid.UUID) (GetTrackForStreamRow, error)
 	GetUser(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	// Subject lookups come first in the sign-in path: an IdP subject is stable
