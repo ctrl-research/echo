@@ -20,6 +20,19 @@ promotion into the library.
 
 PostgreSQL **18** is a hard floor: the schema uses the built-in `uuidv7()`.
 
+## Container image
+
+Published to GHCR on every merge to `main`, for `linux/amd64` and `linux/arm64`:
+
+```
+ghcr.io/ctrl-research/echo:latest              # tracks main
+ghcr.io/ctrl-research/echo:sha-<commit>        # immutable, per commit
+ghcr.io/ctrl-research/echo:1.2.3               # on a v1.2.3 tag
+```
+
+Prefer a `sha-` or version tag in a cluster: `latest` moves under you, and a
+rollback needs a tag that does not.
+
 ## Quick start
 
 ```sh
