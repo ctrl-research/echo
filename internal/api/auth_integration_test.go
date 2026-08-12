@@ -17,7 +17,10 @@ import (
 
 	"github.com/jonathanng/echo/internal/api"
 	"github.com/jonathanng/echo/internal/auth"
+	"github.com/jonathanng/echo/internal/blobstore"
 	"github.com/jonathanng/echo/internal/db/dbgen"
+	"github.com/jonathanng/echo/internal/jobs"
+	"github.com/jonathanng/echo/internal/library"
 )
 
 const (
@@ -49,10 +52,15 @@ func newHarness(t *testing.T) *harness {
 		t.Fatalf("auth.NewService: %v", err)
 	}
 
+	blobs, err := blobstore.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatalf("blobstore: %v", err)
+	}
 	srv := api.New(api.Deps{
-		Pool: pool,
-		Log:  discardLogger(),
-		Auth: authSvc,
+		Pool:    pool,
+		Log:     discardLogger(),
+		Auth:    authSvc,
+		Library: library.NewService(pool, jobs.New(pool, discardLogger()), blobs, discardLogger()),
 	})
 	ts := httptest.NewServer(srv.Router)
 	t.Cleanup(ts.Close)

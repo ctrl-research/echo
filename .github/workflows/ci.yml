@@ -67,7 +67,9 @@ jobs:
       - name: Integration tests
         run: |
           set -o pipefail
-          go test -race -tags integration -timeout 15m -v ./... 2>&1 | tee test.log
+          # -p 2: each package starts its own Postgres container, and running
+          # four at once starves a modest runner into connection timeouts.
+          go test -race -tags integration -timeout 15m -p 2 -v ./... 2>&1 | tee test.log
           if grep -q '^--- SKIP' test.log; then
             echo "::error::tests were skipped; integration tests must be hermetic"
             grep '^--- SKIP' test.log
