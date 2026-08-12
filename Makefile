@@ -64,6 +64,9 @@ test: ## Run unit tests (no Docker required)
 
 .PHONY: test-integration
 test-integration: ## Run integration tests (requires a running Docker daemon)
+	@# -p 2 bounds how many packages run at once. Each one starts its own
+	@# Postgres container, and four at a time starves a modest Docker VM badly
+	@# enough that connections time out — a flake that looks like a logic bug.
 	@# testcontainers resolves the daemon itself, but its fallback order can pick
 	@# a stale socket when several Docker contexts exist (a leftover Docker
 	@# Desktop entry alongside colima, say). Taking the endpoint from the active
@@ -75,7 +78,7 @@ test-integration: ## Run integration tests (requires a running Docker daemon)
 		export DOCKER_HOST="$$endpoint"; \
 		export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock; \
 	fi; \
-	go test -race -tags integration -timeout 15m ./...
+	go test -race -tags integration -timeout 15m -p 2 ./...
 
 .PHONY: lint
 lint: ## Vet both build configurations

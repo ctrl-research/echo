@@ -502,3 +502,24 @@ func TestCopyIsNotMistakenForAMove(t *testing.T) {
 		t.Errorf("live track count = %d, want 2", n)
 	}
 }
+
+// Variants that reconcile together share one row, so one of them supplies the
+// display name. That choice must not depend on which scanner worker got there
+// first: the same library should always present the same name.
+func TestReconciledArtistPrefersTheFullerName(t *testing.T) {
+	h := newHarness(t,
+		trackSpec{RelPath: "a/1.mp3", Title: "One", Artist: "Beatles", Album: "X"},
+		trackSpec{RelPath: "a/2.mp3", Title: "Two", Artist: "The Beatles", Album: "X"},
+		trackSpec{RelPath: "a/3.mp3", Title: "Three", Artist: "BEATLES", Album: "X"},
+	)
+	h.scan()
+
+	var name string
+	if err := h.pool.QueryRow(context.Background(),
+		`SELECT name FROM artists`).Scan(&name); err != nil {
+		t.Fatalf("load artist: %v", err)
+	}
+	if name != "The Beatles" {
+		t.Errorf("artist display name = %q, want %q", name, "The Beatles")
+	}
+}

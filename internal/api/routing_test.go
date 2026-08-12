@@ -192,3 +192,30 @@ func TestOperationsReport503WithoutDatabase(t *testing.T) {
 		}
 	}
 }
+
+// Authorisation is default-deny, decided by an allowlist of public paths. This
+// asserts the allowlist is exactly what we think it is, so an endpoint added
+// later cannot quietly become anonymous — the failure mode that let the entire
+// library be readable without a session.
+func TestOnlyExpectedPathsArePublic(t *testing.T) {
+	want := map[string]bool{
+		"/health":         true,
+		"/auth/providers": true,
+		"/auth/login":     true,
+	}
+
+	if len(publicPaths) != len(want) {
+		t.Fatalf("publicPaths = %v, want exactly %v", publicPaths, want)
+	}
+	for path := range want {
+		if !publicPaths[path] {
+			t.Errorf("%s should be public but is not", path)
+		}
+	}
+	for path := range publicPaths {
+		if !want[path] {
+			t.Errorf("%s is public and should not be; add it here deliberately or "+
+				"remove it from publicPaths", path)
+		}
+	}
+}

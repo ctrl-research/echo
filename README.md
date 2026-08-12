@@ -5,9 +5,9 @@ short-lived cache, and runs as an installable PWA with offline playback.
 
 Design and rationale: [`docs/design.md`](docs/design.md).
 
-**Status: M2.** Authentication (Google + OIDC) and the library scanner —
-tag reading, artist/album reconciliation, cover art, move detection, a
-filesystem watcher, and a Postgres-backed job queue. No playback yet.
+**Status: M3.** Authentication (Google + OIDC), the library scanner, and the
+library API — browsing with filters, keyset pagination, full-text and fuzzy
+search, and metadata corrections. No playback yet.
 
 ## Stack
 
@@ -130,6 +130,26 @@ grows past a single replica — see "Scaling, honestly" in the design doc.
 
 Library files are mounted read-only and are never modified. Metadata edits are
 stored in the database and applied at read time.
+
+## Library API
+
+`GET /tracks` filters by artist, album, genre, and year, keyset-paginated on an
+opaque cursor so a page boundary survives the library changing mid-scroll —
+which it does constantly while a scan runs.
+
+`GET /search` runs ranked full-text search and widens to trigram similarity when
+exact matching finds too little, so `radiohed` still finds Radiohead and `bjork`
+reaches `Björk`. Results say which mode produced them.
+
+`PATCH /tracks/{id}` records a metadata correction. Corrections live in
+`track_overrides` and are applied at read time through a view — **the audio file
+is never modified** — and the search index is rebuilt in the same transaction,
+so a corrected title is immediately findable. `DELETE /tracks/{id}/override`
+reverts to the file's own tags.
+
+Everything except `/health`, `/auth/providers`, and `/auth/login` requires a
+session. Authorisation is default-deny: a new endpoint is private until it is
+deliberately added to the public allowlist.
 
 ## Library scanning
 

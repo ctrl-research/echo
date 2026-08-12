@@ -95,6 +95,74 @@ export interface paths {
         patch: operations["updateUser"];
         trace?: never;
     };
+    "/albums": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browse albums */
+        get: operations["listAlbums"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/albums/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an album with its tracks */
+        get: operations["getAlbum"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/artists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browse artists */
+        get: operations["listArtists"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/artists/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an artist */
+        get: operations["getArtist"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -195,6 +263,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/genres": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List genres with track counts */
+        get: operations["listGenres"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -215,10 +300,117 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search tracks, albums, and artists
+         * @description Ranked full-text search, with a fuzzy fallback for typos.
+         */
+        get: operations["search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Browse tracks
+         * @description Filter by artist, album, genre, or year. Keyset-paginated.
+         */
+        get: operations["listTracks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tracks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one track */
+        get: operations["getTrack"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Correct a track's metadata
+         * @description Stored as an override; the audio file is never modified.
+         */
+        patch: operations["updateTrack"];
+        trace?: never;
+    };
+    "/tracks/{id}/override": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Discard corrections and revert to the file's own tags */
+        delete: operations["clearTrackOverride"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AlbumDTO: {
+            artistId?: string;
+            artistName: string;
+            coverArtId?: string;
+            /** Format: int64 */
+            durationMs: number;
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: int64 */
+            trackCount: number;
+            /** Format: int32 */
+            year?: number;
+        };
+        ArtistDTO: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ArtistDTO.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            albumCount: number;
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: int64 */
+            trackCount: number;
+        };
         ChangePasswordInputBody: {
             /**
              * Format: uri
@@ -296,6 +488,23 @@ export interface components {
              */
             type: string;
         };
+        GenreDTO: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: int64 */
+            trackCount: number;
+        };
+        GetAlbumOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/GetAlbumOutputBody.json
+             */
+            readonly $schema?: string;
+            album: components["schemas"]["AlbumDTO"];
+            tracks: components["schemas"]["TrackDTO"][] | null;
+        };
         HealthOutputBody: {
             /**
              * Format: uri
@@ -354,6 +563,35 @@ export interface components {
             /** Format: int64 */
             tracks: number;
         };
+        ListAlbumsOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ListAlbumsOutputBody.json
+             */
+            readonly $schema?: string;
+            albums: components["schemas"]["AlbumDTO"][] | null;
+            nextCursor?: string;
+        };
+        ListArtistsOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ListArtistsOutputBody.json
+             */
+            readonly $schema?: string;
+            artists: components["schemas"]["ArtistDTO"][] | null;
+            nextCursor?: string;
+        };
+        ListGenresOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ListGenresOutputBody.json
+             */
+            readonly $schema?: string;
+            genres: components["schemas"]["GenreDTO"][] | null;
+        };
         ListJobsOutputBody: {
             /**
              * Format: uri
@@ -366,6 +604,17 @@ export interface components {
                 [key: string]: number;
             };
             jobs: components["schemas"]["JobDTO"][] | null;
+        };
+        ListTracksOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ListTracksOutputBody.json
+             */
+            readonly $schema?: string;
+            /** @description Absent on the last page */
+            nextCursor?: string;
+            tracks: components["schemas"]["TrackDTO"][] | null;
         };
         ListUsersOutputBody: {
             /**
@@ -412,6 +661,49 @@ export interface components {
             scanning: boolean;
             writable: boolean;
         };
+        SearchOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SearchOutputBody.json
+             */
+            readonly $schema?: string;
+            albums: components["schemas"]["AlbumDTO"][] | null;
+            artists: components["schemas"]["ArtistDTO"][] | null;
+            fuzzy: boolean;
+            tracks: components["schemas"]["TrackDTO"][] | null;
+        };
+        TrackDTO: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/TrackDTO.json
+             */
+            readonly $schema?: string;
+            albumArtist?: string;
+            albumId?: string;
+            albumName: string;
+            artistId?: string;
+            artistName: string;
+            /** Format: int32 */
+            bitrate?: number;
+            coverArtId?: string;
+            /** Format: int32 */
+            discNo?: number;
+            /** Format: int32 */
+            durationMs?: number;
+            genres: string[] | null;
+            /** Format: uuid */
+            id: string;
+            overridden: boolean;
+            /** @description File extension, without the dot */
+            suffix: string;
+            title: string;
+            /** Format: int32 */
+            trackNo?: number;
+            /** Format: int32 */
+            year?: number;
+        };
         TriggerScanOutputBody: {
             /**
              * Format: uri
@@ -424,6 +716,25 @@ export interface components {
              * @description Number of roots queued for scanning
              */
             queued: number;
+        };
+        UpdateTrackInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/UpdateTrackInputBody.json
+             */
+            readonly $schema?: string;
+            albumArtist?: string;
+            albumName?: string;
+            artistName?: string;
+            /** Format: int64 */
+            discNo?: number;
+            genre?: string;
+            title?: string;
+            /** Format: int64 */
+            trackNo?: number;
+            /** Format: int64 */
+            year?: number;
         };
         UpdateUserInputBody: {
             /**
@@ -717,6 +1028,135 @@ export interface operations {
             };
         };
     };
+    listAlbums: {
+        parameters: {
+            query?: {
+                artist?: string;
+                genre?: string;
+                year?: number;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListAlbumsOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getAlbum: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GetAlbumOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    listArtists: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListArtistsOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getArtist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtistDTO"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     login: {
         parameters: {
             query?: never;
@@ -875,6 +1315,35 @@ export interface operations {
             };
         };
     };
+    listGenres: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListGenresOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     health: {
         parameters: {
             query?: never;
@@ -892,6 +1361,169 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HealthOutputBody"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    search: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    listTracks: {
+        parameters: {
+            query?: {
+                artist?: string;
+                album?: string;
+                genre?: string;
+                year?: number;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListTracksOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getTrack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackDTO"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    updateTrack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTrackInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackDTO"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    clearTrackOverride: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

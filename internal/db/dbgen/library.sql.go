@@ -432,7 +432,9 @@ const upsertAlbum = `-- name: UpsertAlbum :one
 INSERT INTO albums (name, norm_name, album_artist_id, year, cover_art_id)
 VALUES ($1, $2, $3::uuid, $4::int, $5::uuid)
 ON CONFLICT (norm_name, album_artist_id) DO UPDATE
-SET year         = COALESCE(albums.year, EXCLUDED.year),
+SET name         = CASE WHEN length(EXCLUDED.name) > length(albums.name)
+                        THEN EXCLUDED.name ELSE albums.name END,
+    year         = COALESCE(albums.year, EXCLUDED.year),
     cover_art_id = COALESCE(albums.cover_art_id, EXCLUDED.cover_art_id)
 RETURNING id, name, norm_name, album_artist_id, year, cover_art_id, disc_count, created_at
 `
@@ -472,7 +474,9 @@ const upsertArtist = `-- name: UpsertArtist :one
 
 INSERT INTO artists (name, norm_name, sort_name)
 VALUES ($1, $2, $3::text)
-ON CONFLICT (norm_name) DO UPDATE SET name = artists.name
+ON CONFLICT (norm_name) DO UPDATE
+SET name = CASE WHEN length(EXCLUDED.name) > length(artists.name)
+                THEN EXCLUDED.name ELSE artists.name END
 RETURNING id, name, norm_name, sort_name, mbid, created_at
 `
 
@@ -487,6 +491,11 @@ type UpsertArtistParams struct {
 // to one artist. ON CONFLICT DO UPDATE rather than DO NOTHING because a bare
 // DO NOTHING returns no row on conflict, which would cost a second round trip
 // on the overwhelmingly common already-exists path.
+// Variants that normalise together share a row, so one of them has to supply
+// the display name. Keeping whichever inserted first makes that a race between
+// scanner workers — the same library could show "The Beatles" or "Beatles"
+// depending on file order. Preferring the longer form is both deterministic and
+// usually the more complete name.
 func (q *Queries) UpsertArtist(ctx context.Context, arg UpsertArtistParams) (Artist, error) {
 	row := q.db.QueryRow(ctx, upsertArtist, arg.Name, arg.NormName, arg.SortName)
 	var i Artist

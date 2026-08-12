@@ -114,6 +114,7 @@ func New(deps Deps) *Server {
 	s.registerAuth()
 	s.registerUsers()
 	s.registerLibraryAdmin()
+	s.registerBrowse()
 
 	r.Mount(APIPrefix, apiRouter)
 
@@ -154,21 +155,36 @@ func (s *Server) applyRouteGuards() {
 			return
 		}
 
+		// Default deny. Authorisation is decided by an explicit allowlist of
+		// public paths rather than by naming the protected ones, so an endpoint
+		// added later is private until somebody deliberately opens it. The
+		// inverse — listing what to protect — makes the failure mode "new
+		// endpoint silently serves the whole library to anonymous callers".
 		switch {
+		case publicPaths[path]:
+			// No session required; the client calls these before it has one.
 		case strings.HasPrefix(path, "/admin"):
 			if !s.guard(hctx, true) {
 				return
 			}
-		case path == "/auth/providers" || path == "/auth/login":
-			// Public by necessity: the client calls these before it has a
-			// session.
-		case path == "/auth/logout" || path == "/auth/password" || path == "/auth/me":
+		default:
 			if !s.guard(hctx, false) {
 				return
 			}
 		}
 		next(hctx)
 	})
+}
+
+// publicPaths may be called without a session. Everything else requires one.
+//
+// Keep this list short and justify each entry: health is what probes call,
+// providers is how the sign-in page knows which buttons to show, and login is
+// how a session is obtained in the first place.
+var publicPaths = map[string]bool{
+	"/health":         true,
+	"/auth/providers": true,
+	"/auth/login":     true,
 }
 
 // guard writes an error and reports false when the caller is not permitted.
