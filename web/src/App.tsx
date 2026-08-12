@@ -1,13 +1,7 @@
-import { useEffect, useState } from "react";
-import { api } from "./api/client";
 import { AuthProvider, useAuth } from "./auth";
 import Login from "./Login";
-
-type Health = {
-  status: string;
-  version: string;
-  database: string;
-};
+import Library from "./library/Library";
+import Player from "./player/Player";
 
 export default function App() {
   return (
@@ -32,26 +26,11 @@ function Root() {
   return <Shell />;
 }
 
-/**
- * M1 placeholder: proves the session round trip and shows who is signed in.
- * Replaced by the library browser and player in M3/M4.
- */
 function Shell() {
   const { user, logout } = useAuth();
-  const [health, setHealth] = useState<Health | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.GET("/health").then(({ data }) => {
-      if (!cancelled && data) setHealth(data as Health);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   return (
-    <main>
+    <div className="app">
       <header className="bar">
         <h1>Echo</h1>
         <span>
@@ -61,18 +40,8 @@ function Shell() {
         <button onClick={() => void logout()}>Sign out</button>
       </header>
 
-      <p>Library browsing arrives in M3. The server is up and you are signed in.</p>
-
-      {health && (
-        <dl>
-          <dt>Status</dt>
-          <dd>{health.status}</dd>
-          <dt>Database</dt>
-          <dd>{health.database}</dd>
-          <dt>Version</dt>
-          <dd>{health.version}</dd>
-        </dl>
-      )}
-    </main>
+      <Library />
+      <Player />
+    </div>
   );
 }
