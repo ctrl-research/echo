@@ -105,17 +105,70 @@ func TestPlaylistLifecycle(t *testing.T) {
 	gone.Body.Close()
 }
 
-// The same song may legitimately appear twice in one playlist, so entries are
-// identified by their own id rather than by track.
+// A repeat is legitimate but must be deliberate: a mis-click should not quietly
+// duplicate an entry, so the second add is refused until it is confirmed.
+func TestDuplicateAddRequiresConfirmation(t *testing.T) {
+	h := newHarness(t)
+	h.seedLibrary(t)
+	h.loginAsAdmin()
+	pl := h.createPlaylist(t, "On Repeat", false)
+
+	first := h.do(http.MethodPost, "/playlists/"+pl.ID+"/tracks",
+		map[string]string{"trackId": airbag})
+	assertStatus(t, first, http.StatusCreated)
+	first.Body.Close()
+
+	refused := h.do(http.MethodPost, "/playlists/"+pl.ID+"/tracks",
+		map[string]string{"trackId": airbag})
+	assertStatus(t, refused, http.StatusConflict)
+	refused.Body.Close()
+
+	// And nothing was added behind the refusal.
+	detail := decode[playlistDetail](t, h.do(http.MethodGet, "/playlists/"+pl.ID, nil))
+	if len(detail.Tracks) != 1 {
+		t.Fatalf("playlist has %d tracks after a refused add, want 1", len(detail.Tracks))
+	}
+
+	confirmed := h.do(http.MethodPost, "/playlists/"+pl.ID+"/tracks",
+		map[string]any{"trackId": airbag, "allowDuplicate": true})
+	assertStatus(t, confirmed, http.StatusCreated)
+	confirmed.Body.Close()
+
+	after := decode[playlistDetail](t, h.do(http.MethodGet, "/playlists/"+pl.ID, nil))
+	if len(after.Tracks) != 2 {
+		t.Errorf("playlist has %d tracks after confirming, want 2", len(after.Tracks))
+	}
+}
+
+// A different track is not a duplicate, so it must not be blocked.
+func TestDistinctTracksAddWithoutConfirmation(t *testing.T) {
+	h := newHarness(t)
+	h.seedLibrary(t)
+	h.loginAsAdmin()
+	pl := h.createPlaylist(t, "Varied", false)
+
+	for _, track := range []string{airbag, paranoid, karma} {
+		resp := h.do(http.MethodPost, "/playlists/"+pl.ID+"/tracks",
+			map[string]string{"trackId": track})
+		assertStatus(t, resp, http.StatusCreated)
+		resp.Body.Close()
+	}
+}
+
+// Confirmed duplicates still get their own entry ids, so the right copy can be
+// removed.
 func TestPlaylistAllowsDuplicateTracks(t *testing.T) {
 	h := newHarness(t)
 	h.seedLibrary(t)
 	h.loginAsAdmin()
 	pl := h.createPlaylist(t, "On Repeat", false)
 
-	for range 2 {
-		resp := h.do(http.MethodPost, "/playlists/"+pl.ID+"/tracks",
-			map[string]string{"trackId": airbag})
+	for i := range 2 {
+		body := map[string]any{"trackId": airbag}
+		if i > 0 {
+			body["allowDuplicate"] = true
+		}
+		resp := h.do(http.MethodPost, "/playlists/"+pl.ID+"/tracks", body)
 		assertStatus(t, resp, http.StatusCreated)
 		resp.Body.Close()
 	}

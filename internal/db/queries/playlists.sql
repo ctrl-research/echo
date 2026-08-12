@@ -183,3 +183,11 @@ LIMIT $2;
 -- trusting the client's number would let anyone inflate their own counts.
 -- name: GetTrackDuration :one
 SELECT duration_ms FROM tracks WHERE id = $1 AND missing_at IS NULL;
+
+-- Adding a track that is already present is allowed, but only deliberately:
+-- the API refuses it unless the caller confirms, so a mis-click cannot quietly
+-- duplicate an entry.
+-- name: PlaylistContainsTrack :one
+SELECT EXISTS (
+    SELECT 1 FROM playlist_tracks WHERE playlist_id = $1 AND track_id = $2
+);

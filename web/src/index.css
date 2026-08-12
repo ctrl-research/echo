@@ -347,3 +347,34 @@ select {
 
 .inline-form { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
 .inline-form input { flex: 1 1 16rem; }
+
+.confirm {
+  max-width: min(26rem, 90vw);
+  padding: 1.25rem;
+  color: inherit;
+  background: Canvas;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 0.6rem;
+}
+
+.confirm::backdrop { background: rgb(0 0 0 / 0.5); }
+.confirm h2 { margin: 0 0 0.5rem; font-size: 1.1rem; }
+.confirm p { margin: 0 0 1rem; }
+
+.confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.confirm-actions button {
+  padding: 0.45rem 0.9rem;
+  background: transparent;
+  color: inherit;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+}
+
+.confirm-actions .primary {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  font-weight: 600;
+}

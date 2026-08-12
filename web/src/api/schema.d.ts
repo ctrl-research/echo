@@ -617,6 +617,7 @@ export interface components {
              * @example /api/v1/schemas/AddPlaylistTrackInputBody.json
              */
             readonly $schema?: string;
+            allowDuplicate?: boolean;
             /** Format: uuid */
             trackId: string;
         };

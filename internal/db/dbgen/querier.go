@@ -152,6 +152,10 @@ type Querier interface {
 	// Relocating a track keeps its id, and therefore its playlist entries and play
 	// history, across a library reorganisation.
 	MoveTrack(ctx context.Context, arg MoveTrackParams) (Track, error)
+	// Adding a track that is already present is allowed, but only deliberately:
+	// the API refuses it unless the caller confirms, so a mis-click cannot quietly
+	// duplicate an entry.
+	PlaylistContainsTrack(ctx context.Context, arg PlaylistContainsTrackParams) (bool, error)
 	PlaylistIsOwnedBy(ctx context.Context, arg PlaylistIsOwnedByParams) (bool, error)
 	// Rebuilds a track's search text from its effective values.
 	//

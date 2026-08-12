@@ -263,6 +263,10 @@ type AddPlaylistTrackInput struct {
 	ID   string `path:"id" format:"uuid"`
 	Body struct {
 		TrackID string `json:"trackId" format:"uuid"`
+		// A pointer so absent means "not confirmed". Adding a track already in
+		// the playlist is legitimate — a set can repeat a song deliberately —
+		// but it should be a decision, not the silent result of a mis-click.
+		AllowDuplicate *bool `json:"allowDuplicate,omitempty"`
 	}
 }
 
@@ -274,6 +278,23 @@ func (s *Server) handleAddPlaylistTrack(ctx context.Context, in *AddPlaylistTrac
 	}
 	if err := s.requireOwnedPlaylist(ctx, playlistID, me.UserID); err != nil {
 		return nil, err
+	}
+
+	// Checked server-side rather than left to the client: any caller gets the
+	// same protection, and there is no window between "client checked" and
+	// "server appended" for a concurrent add to slip through unnoticed.
+	if in.Body.AllowDuplicate == nil || !*in.Body.AllowDuplicate {
+		duplicate, err := s.queries.PlaylistContainsTrack(ctx, dbgen.PlaylistContainsTrackParams{
+			PlaylistID: playlistID, TrackID: trackID,
+		})
+		if err != nil {
+			s.deps.Log.Error("duplicate check failed", "error", err)
+			return nil, huma.Error500InternalServerError("Could not add track")
+		}
+		if duplicate {
+			return nil, huma.Error409Conflict(
+				"That track is already in this playlist. Send allowDuplicate to add it again.")
+		}
 	}
 
 	if _, err := s.queries.AppendPlaylistTrack(ctx, dbgen.AppendPlaylistTrackParams{

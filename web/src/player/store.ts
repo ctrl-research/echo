@@ -7,6 +7,13 @@ export type RepeatMode = "off" | "all" | "one";
 
 type PlayerState = {
   queue: Track[];
+  /**
+   * Which list the queue came from — an album id, a playlist id, "search", and
+   * so on. Needed because a track id is not enough to identify a row: a
+   * playlist may hold the same song twice, and highlighting by id lights up
+   * every copy instead of the one actually playing.
+   */
+  queueId: string;
   index: number;
   playing: boolean;
   /** Seconds. Mirrored from the audio element so the UI can render a scrubber. */
@@ -16,7 +23,7 @@ type PlayerState = {
   repeat: RepeatMode;
   shuffle: boolean;
 
-  playQueue: (tracks: Track[], startAt?: number) => void;
+  playQueue: (tracks: Track[], startAt?: number, queueId?: string) => void;
   toggle: () => void;
   next: () => void;
   previous: () => void;
@@ -32,6 +39,7 @@ export const current = (s: PlayerState): Track | null => s.queue[s.index] ?? nul
 
 export const usePlayer = create<PlayerState>((set, get) => ({
   queue: [],
+  queueId: "",
   index: 0,
   playing: false,
   position: 0,
@@ -40,8 +48,8 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   repeat: "off",
   shuffle: false,
 
-  playQueue: (tracks, startAt = 0) =>
-    set({ queue: tracks, index: startAt, playing: true, position: 0, duration: 0 }),
+  playQueue: (tracks, startAt = 0, queueId = "") =>
+    set({ queue: tracks, queueId, index: startAt, playing: true, position: 0, duration: 0 }),
 
   toggle: () => set((s) => ({ playing: !s.playing })),
 

@@ -175,6 +175,13 @@ is visible to any signed-in user, but only its owner can change it. Entries are
 identified by their own id rather than by track, so the same song can appear
 twice — and removing one of them removes the right one.
 
+Adding a track that is already in a playlist is refused with `409` unless the
+request sets `allowDuplicate`; the client turns that into a confirmation dialog.
+A set can repeat a song deliberately, but it should be a decision rather than
+the silent result of a mis-click. When a playlist does hold a song twice, the
+now-playing highlight follows the **position** rather than the track, so exactly
+one row lights up.
+
 Favourites and play history are strictly per-user. The favourite flag on a track
 listing reflects the caller, so two people browsing the same library see their
 own hearts.

@@ -565,6 +565,27 @@ func (q *Queries) ListPlaylists(ctx context.Context, userID uuid.UUID) ([]ListPl
 	return items, nil
 }
 
+const playlistContainsTrack = `-- name: PlaylistContainsTrack :one
+SELECT EXISTS (
+    SELECT 1 FROM playlist_tracks WHERE playlist_id = $1 AND track_id = $2
+)
+`
+
+type PlaylistContainsTrackParams struct {
+	PlaylistID uuid.UUID
+	TrackID    uuid.UUID
+}
+
+// Adding a track that is already present is allowed, but only deliberately:
+// the API refuses it unless the caller confirms, so a mis-click cannot quietly
+// duplicate an entry.
+func (q *Queries) PlaylistContainsTrack(ctx context.Context, arg PlaylistContainsTrackParams) (bool, error) {
+	row := q.db.QueryRow(ctx, playlistContainsTrack, arg.PlaylistID, arg.TrackID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const playlistIsOwnedBy = `-- name: PlaylistIsOwnedBy :one
 SELECT EXISTS (SELECT 1 FROM playlists WHERE id = $1 AND user_id = $2)
 `
