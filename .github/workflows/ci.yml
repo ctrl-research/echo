@@ -70,9 +70,12 @@ jobs:
           # -p 2: each package starts its own Postgres container, and running
           # four at once starves a modest runner into connection timeouts.
           go test -race -tags integration -timeout 15m -p 2 -v ./... 2>&1 | tee test.log
-          if grep -q '^--- SKIP' test.log; then
+          # Leading whitespace allowed: Go indents subtest results, so an
+          # anchored '^--- SKIP' silently misses a skipped subtest — the same
+          # blind spot this guard exists to close.
+          if grep -qE '^[[:space:]]*--- SKIP' test.log; then
             echo "::error::tests were skipped; integration tests must be hermetic"
-            grep '^--- SKIP' test.log
+            grep -E '^[[:space:]]*--- SKIP' test.log
             exit 1
           fi
 
