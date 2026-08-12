@@ -109,6 +109,12 @@ jobs:
           git diff --exit-code -- web/src/api/schema.d.ts \
             || { echo "::error::client API types are stale; run 'make types'"; exit 1; }
 
+      # The player's queue logic is real logic and regresses like any other.
+      # Shuffle in particular had a bug that only a test would have caught.
+      - name: Client tests
+        run: npm test
+        working-directory: web
+
       - name: Build client
         run: npm run build
         working-directory: web

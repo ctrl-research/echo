@@ -61,7 +61,8 @@ make help              List all targets
 make build             Server with the client embedded
 make build-server      Server only, no Node required
 make generate          Run sqlc and regenerate client API types
-make test              Unit tests
+make test              Go unit tests
+make test-web          Client tests (player queue logic)
 make test-integration  Integration tests (needs a Docker daemon)
 make lint              go vet in both build configurations, plus gofmt
 make migration name=x  Scaffold a new migration
@@ -167,6 +168,19 @@ reverts to the file's own tags.
 Everything except `/health`, `/auth/providers`, and `/auth/login` requires a
 session. Authorisation is default-deny: a new endpoint is private until it is
 deliberately added to the public allowlist.
+
+## Shuffle
+
+Shuffle is an **order**, not a dice roll per track. Picking at random each time
+plays the same song twice in a row often enough to be irritating, and can play
+one track three times before others have played at all.
+
+Enabling shuffle builds a permutation anchored on whatever is playing, so it
+never interrupts the current track. Advancing walks that permutation, which
+guarantees every track plays once before any plays twice. At the end of a cycle
+with repeat-all it reshuffles, keeping the track that just finished out of first
+place so the wrap is not a consecutive repeat either. Repeat-one still repeats —
+that is a listener asking for it.
 
 ## Playlists, favourites, and history
 

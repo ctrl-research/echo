@@ -59,8 +59,12 @@ types: openapi.yaml web/node_modules ## Generate the client's TypeScript API typ
 ## ---- quality ---------------------------------------------------------------
 
 .PHONY: test
-test: ## Run unit tests (no Docker required)
+test: ## Run Go unit tests (no Docker required)
 	go test -race ./...
+
+.PHONY: test-web
+test-web: web/node_modules ## Run client tests
+	cd web && npm test
 
 .PHONY: test-integration
 test-integration: ## Run integration tests (requires a running Docker daemon)
