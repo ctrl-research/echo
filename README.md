@@ -5,8 +5,8 @@ short-lived cache, and runs as an installable PWA with offline playback.
 
 Design and rationale: [`docs/design.md`](docs/design.md).
 
-**Status: M4.** Authentication (Google + OIDC), the library scanner, the library
-API, and playback — range-request streaming, a queue, and a working player UI.
+**Status: M5.** Authentication (Google + OIDC), the library scanner, the library
+API, playback, and per-user state — playlists, favourites, and play history.
 
 ## Stack
 
@@ -167,6 +167,23 @@ reverts to the file's own tags.
 Everything except `/health`, `/auth/providers`, and `/auth/login` requires a
 session. Authorisation is default-deny: a new endpoint is private until it is
 deliberately added to the public allowlist.
+
+## Playlists, favourites, and history
+
+Playlists are private by default and can be shared read-only: a public playlist
+is visible to any signed-in user, but only its owner can change it. Entries are
+identified by their own id rather than by track, so the same song can appear
+twice — and removing one of them removes the right one.
+
+Favourites and play history are strictly per-user. The favourite flag on a track
+listing reflects the caller, so two people browsing the same library see their
+own hearts.
+
+A play counts once it passes **half the track or four minutes, whichever comes
+first** — Last.fm's rule, so counts stay comparable if history is ever forwarded
+elsewhere. The threshold is checked against the duration the server knows, not
+one the client reports, so nobody can inflate their own counts. Plays outlive
+their tracks: deleting a file does not erase the fact that it was listened to.
 
 ## Library scanning
 
