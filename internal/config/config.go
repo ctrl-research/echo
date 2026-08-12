@@ -52,6 +52,15 @@ type Config struct {
 	// AllowedEmails may create accounts after the first user exists.
 	AllowedEmails []string
 
+	// YTCookiesFile is passed to yt-dlp. YouTube increasingly demands cookies
+	// from datacenter addresses; a residential homelab usually does not need
+	// them.
+	YTCookiesFile string
+
+	// YTMaxLifetime caps how far the sliding TTL can push an item's expiry from
+	// its original download.
+	YTMaxLifetime time.Duration
+
 	// ScanWorkers is how many background job workers run.
 	ScanWorkers int
 
@@ -84,6 +93,8 @@ func Load() (*Config, error) {
 		TranscodeCacheMaxBytes: 10 << 30,
 		SessionTTL:             30 * 24 * time.Hour,
 		ScanWorkers:            4,
+		YTCookiesFile:          env("ECHO_YT_COOKIES_FILE", ""),
+		YTMaxLifetime:          14 * 24 * time.Hour,
 		ScanOnStart:            env("ECHO_SCAN_ON_START", "true") == "true",
 		BaseURL:                strings.TrimSuffix(env("ECHO_BASE_URL", "http://localhost:8080"), "/"),
 		GoogleClientID:         env("ECHO_GOOGLE_CLIENT_ID", ""),
@@ -120,6 +131,14 @@ func Load() (*Config, error) {
 	if oidcSet != 0 && oidcSet != 3 {
 		errs = append(errs, errors.New(
 			"ECHO_OIDC_ISSUER_URL, ECHO_OIDC_CLIENT_ID, and ECHO_OIDC_CLIENT_SECRET must be set together"))
+	}
+	if v := os.Getenv("ECHO_YT_MAX_LIFETIME"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			errs = append(errs, errors.New("ECHO_YT_MAX_LIFETIME must be a positive duration"))
+		} else {
+			c.YTMaxLifetime = d
+		}
 	}
 	if v := os.Getenv("ECHO_SCAN_WORKERS"); v != "" {
 		n, err := strconv.Atoi(v)

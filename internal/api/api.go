@@ -21,6 +21,7 @@ import (
 	"github.com/jonathanng/echo/internal/library"
 	"github.com/jonathanng/echo/internal/media"
 	"github.com/jonathanng/echo/internal/version"
+	"github.com/jonathanng/echo/internal/youtube"
 )
 
 // APIPrefix is where the JSON API is mounted. The generated client uses the
@@ -41,6 +42,9 @@ type Deps struct {
 	Library *library.Service
 	// Media serves audio and artwork bytes. Nil disables those routes.
 	Media *media.Service
+	// YouTube searches and caches audio from YouTube. Nil disables it, which
+	// is also what an instance without yt-dlp effectively has.
+	YouTube *youtube.Service
 	// WebFS serves the built client. Nil disables static serving, which is
 	// what tests and `go run` without a client build want.
 	WebFS http.FileSystem
@@ -121,6 +125,8 @@ func New(deps Deps) *Server {
 	s.registerPlaylists()
 	// Raw-bytes routes live on chi but are documented in the same spec.
 	s.registerMedia(apiRouter)
+	s.registerYouTubeMedia(apiRouter)
+	s.registerYouTube()
 	documentMediaRoutes(s.API)
 
 	r.Mount(APIPrefix, apiRouter)

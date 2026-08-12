@@ -34,9 +34,11 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ---- runtime ----------------------------------------------------------------
 FROM alpine:3.22 AS runtime
 
-# python3 is yt-dlp's runtime; ffmpeg is used for transcoding and for the
-# metadata embedding yt-dlp performs on download.
-RUN apk add --no-cache ca-certificates ffmpeg python3 tzdata wget
+# python3 is yt-dlp's runtime and ffmpeg does the audio conversion. mutagen is
+# not optional despite looking like it: without it yt-dlp's --embed-thumbnail
+# post-processor fails and the whole invocation exits non-zero, even though the
+# audio was produced correctly.
+RUN apk add --no-cache ca-certificates ffmpeg python3 py3-mutagen tzdata wget
 
 # Pin YTDLP_VERSION for reproducible images. Left at "latest" by default
 # because YouTube extraction breaks every few weeks and a stale pin fails

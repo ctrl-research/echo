@@ -163,6 +163,22 @@ func documentMediaRoutes(api huma.API) {
 			Tags: []string{"media"}, Parameters: idParam,
 			Responses: map[string]*huma.Response{"200": image, "404": {Description: "No artwork."}},
 		},
+		"/youtube/{videoId}/stream": {
+			OperationID: "streamYouTube",
+			Summary:     "Stream a cached YouTube item",
+			Description: "Serves the cached Opus audio. Honours Range requests.",
+			Tags:        []string{"media"},
+			Parameters: []*huma.Param{{
+				Name: "videoId", In: "path", Required: true,
+				Schema: &huma.Schema{Type: "string"},
+			}},
+			Responses: map[string]*huma.Response{
+				"200": binary,
+				"206": {Description: "Partial content, in response to a Range request."},
+				"404": {Description: "Unknown video."},
+				"409": {Description: "Still downloading."},
+			},
+		},
 	} {
 		item := spec.Paths[path]
 		if item == nil {
