@@ -316,8 +316,19 @@ CREATE INDEX ON track_search USING gin (haystack gin_trgm_ops);
 whole-word matching and handles multi-term queries properly. Trigram gives
 substring and fuzzy matching — which is what actually saves you when someone
 types `radiohed`, `bjork` for `Björk`, or `beatles` expecting `The Beatles`.
-Query strategy: try `tsv @@ websearch_to_tsquery(...)` first, fall back to
-`similarity(haystack, q) > 0.3` ordered by score when it returns too few rows.
+Query strategy: try `tsv @@ websearch_to_tsquery(...)` first, and widen to
+trigram when it returns fewer than three hits.
+
+**The fallback uses `word_similarity` (`<%`), not `similarity` (`%`).**
+`similarity` compares whole strings, so a short query against a long haystack
+("Airbag Radiohead OK Computer Alternative Rock") scores far below any usable
+threshold and matches nothing at all. `word_similarity` asks whether the query
+closely matches some run of words *inside* the haystack, which is what a search
+box actually means. Both are backed by the same GIN trigram index.
+
+The two are separate queries rather than one OR-ed predicate: combining them
+stops Postgres using either index and turns every search into a sequential
+scan.
 
 `'simple'` rather than `'english'` deliberately — English stemming mangles
 band names and non-English titles, and there's nothing to gain from stemming
@@ -716,7 +727,7 @@ lifecycle.
 | **M0** ✅ | Skeleton: config, goose migrations, sqlc, huma+OpenAPI, `make types`, `BlobStore` iface, Dockerfile, compose, CI | `docker compose up` brings up Postgres + app and serves a health endpoint; testcontainers green in CI |
 | **M1** ✅ | Auth + users. Google + OIDC sign-in (PKCE), session cookies, CSRF, allowlist, user CRUD | Sign in through a real IdP in a browser; roles enforced |
 | **M2** ✅ | Scanner. Walk, tag read, art extraction, move detection, fsnotify, `SKIP LOCKED` job queue | 50k-track library scans; moves preserve IDs; playback unaffected during a scan |
-| **M3** | Library API + search. tsvector + trigram, facets, keyset pagination, overrides | Filter by genre/artist/album; `radiohed` finds Radiohead; edits persist to overrides |
+| **M3** ✅ | Library API + search. tsvector + trigram, facets, keyset pagination, overrides | Filter by genre/artist/album; `radiohed` finds Radiohead; edits persist to overrides |
 | **M4** | Streaming + player. ServeContent, transcode cache, React shell, virtualized lists, Media Session | Full playback with seeking on desktop and mobile browsers |
 | **M5** | Playlists, favorites, history | Per-user state working across two accounts |
 | **M6** | YouTube. Search, download-to-cache, TTL janitor, promote | Play a YouTube result; it expires on schedule; promotion survives eviction |
