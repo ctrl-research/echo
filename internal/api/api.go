@@ -19,6 +19,7 @@ import (
 	"github.com/jonathanng/echo/internal/auth"
 	"github.com/jonathanng/echo/internal/db/dbgen"
 	"github.com/jonathanng/echo/internal/library"
+	"github.com/jonathanng/echo/internal/media"
 	"github.com/jonathanng/echo/internal/version"
 )
 
@@ -38,6 +39,8 @@ type Deps struct {
 	// Library owns scanning and library stats. Nil disables the library
 	// endpoints, which is what `echo openapi` and the routing tests construct.
 	Library *library.Service
+	// Media serves audio and artwork bytes. Nil disables those routes.
+	Media *media.Service
 	// WebFS serves the built client. Nil disables static serving, which is
 	// what tests and `go run` without a client build want.
 	WebFS http.FileSystem
@@ -115,6 +118,9 @@ func New(deps Deps) *Server {
 	s.registerUsers()
 	s.registerLibraryAdmin()
 	s.registerBrowse()
+	// Raw-bytes routes live on chi but are documented in the same spec.
+	s.registerMedia(apiRouter)
+	documentMediaRoutes(s.API)
 
 	r.Mount(APIPrefix, apiRouter)
 

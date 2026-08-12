@@ -21,6 +21,7 @@ import (
 	"github.com/jonathanng/echo/internal/db/dbgen"
 	"github.com/jonathanng/echo/internal/jobs"
 	"github.com/jonathanng/echo/internal/library"
+	"github.com/jonathanng/echo/internal/media"
 )
 
 const (
@@ -35,6 +36,7 @@ const (
 type harness struct {
 	t      *testing.T
 	pool   *pgxpool.Pool
+	blobs  blobstore.Store
 	server *httptest.Server
 	client *http.Client
 }
@@ -61,6 +63,7 @@ func newHarness(t *testing.T) *harness {
 		Log:     discardLogger(),
 		Auth:    authSvc,
 		Library: library.NewService(pool, jobs.New(pool, discardLogger()), blobs, discardLogger()),
+		Media:   media.NewService(pool, blobs, discardLogger()),
 	})
 	ts := httptest.NewServer(srv.Router)
 	t.Cleanup(ts.Close)
@@ -70,7 +73,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatalf("cookiejar: %v", err)
 	}
 
-	h := &harness{t: t, pool: pool, server: ts, client: &http.Client{Jar: jar}}
+	h := &harness{t: t, pool: pool, blobs: blobs, server: ts, client: &http.Client{Jar: jar}}
 	if err := auth.BootstrapLocalAdmin(context.Background(), dbgen.New(pool),
 		discardLogger(), adminEmail, adminPassword); err != nil {
 		t.Fatalf("bootstrap admin: %v", err)
@@ -287,7 +290,7 @@ func newHarnessSharing(t *testing.T, base *harness) *harness {
 	if err != nil {
 		t.Fatalf("cookiejar: %v", err)
 	}
-	return &harness{t: t, pool: base.pool, server: base.server,
+	return &harness{t: t, pool: base.pool, blobs: base.blobs, server: base.server,
 		client: &http.Client{Jar: jar}}
 }
 

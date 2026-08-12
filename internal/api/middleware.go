@@ -78,3 +78,7 @@ func isSafeMethod(m string) bool {
 	}
 	return false
 }
+
+// authIdentity reads the identity the session middleware attached. Used by the
+// chi-registered media routes, which do not pass through the huma guard chain.
+func authIdentity(r *http.Request) *auth.Identity { return auth.FromContext(r.Context()) }

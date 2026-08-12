@@ -11,9 +11,11 @@
     "gen:api": "openapi-typescript ../openapi.yaml -o src/api/schema.d.ts"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.101.4",
     "openapi-fetch": "^0.14.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

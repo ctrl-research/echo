@@ -27,6 +27,7 @@ import (
 	"github.com/jonathanng/echo/internal/db/dbgen"
 	"github.com/jonathanng/echo/internal/jobs"
 	"github.com/jonathanng/echo/internal/library"
+	"github.com/jonathanng/echo/internal/media"
 	"github.com/jonathanng/echo/internal/version"
 	"github.com/jonathanng/echo/internal/webui"
 )
@@ -157,11 +158,18 @@ func run(cmd string) error {
 			"baseURL", cfg.BaseURL)
 	}
 
+	mediaSvc := media.NewService(pool, blobs, log)
+	if !mediaSvc.TranscodingAvailable() {
+		log.Warn("ffmpeg is unavailable; only natively playable formats can be " +
+			"streamed (mp3, m4a, flac, ogg, opus, wav)")
+	}
+
 	srv := api.New(api.Deps{
 		Pool:    pool,
 		Log:     log,
 		Auth:    authSvc,
 		Library: lib,
+		Media:   mediaSvc,
 		WebFS:   webui.FS(),
 	})
 
