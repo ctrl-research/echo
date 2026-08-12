@@ -17,7 +17,10 @@
 SELECT te.*,
        (SELECT COALESCE(array_agg(g.name ORDER BY g.name), '{}')
         FROM track_genres tg JOIN genres g ON g.id = tg.genre_id
-        WHERE tg.track_id = te.id)::text[] AS genres
+        WHERE tg.track_id = te.id)::text[] AS genres,
+       EXISTS (SELECT 1 FROM favorites f
+               WHERE f.user_id = sqlc.arg(user_id) AND f.entity_type = 'track'
+                 AND f.entity_id = te.id) AS favorite
 FROM tracks_effective te
 WHERE te.missing_at IS NULL
   AND (sqlc.narg(artist_id)::uuid IS NULL
@@ -37,9 +40,12 @@ LIMIT $1;
 SELECT te.*,
        (SELECT COALESCE(array_agg(g.name ORDER BY g.name), '{}')
         FROM track_genres tg JOIN genres g ON g.id = tg.genre_id
-        WHERE tg.track_id = te.id)::text[] AS genres
+        WHERE tg.track_id = te.id)::text[] AS genres,
+       EXISTS (SELECT 1 FROM favorites f
+               WHERE f.user_id = sqlc.arg(user_id) AND f.entity_type = 'track'
+                 AND f.entity_id = te.id) AS favorite
 FROM tracks_effective te
-WHERE te.id = $1;
+WHERE te.id = sqlc.arg(id);
 
 -- ---- albums -------------------------------------------------------------------
 
@@ -78,9 +84,12 @@ GROUP BY al.id, al.name, al.year, al.cover_art_id, ar.id, ar.name;
 SELECT te.*,
        (SELECT COALESCE(array_agg(g.name ORDER BY g.name), '{}')
         FROM track_genres tg JOIN genres g ON g.id = tg.genre_id
-        WHERE tg.track_id = te.id)::text[] AS genres
+        WHERE tg.track_id = te.id)::text[] AS genres,
+       EXISTS (SELECT 1 FROM favorites f
+               WHERE f.user_id = sqlc.arg(user_id) AND f.entity_type = 'track'
+                 AND f.entity_id = te.id) AS favorite
 FROM tracks_effective te
-WHERE te.album_id = $1 AND te.missing_at IS NULL
+WHERE te.album_id = sqlc.arg(album_id) AND te.missing_at IS NULL
 ORDER BY COALESCE(te.disc_no, 1), COALESCE(te.track_no, 0), lower(te.title);
 
 -- ---- artists ------------------------------------------------------------------

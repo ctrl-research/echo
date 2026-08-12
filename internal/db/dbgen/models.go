@@ -14,6 +14,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type FavoriteEntity string
+
+const (
+	FavoriteEntityTrack  FavoriteEntity = "track"
+	FavoriteEntityAlbum  FavoriteEntity = "album"
+	FavoriteEntityArtist FavoriteEntity = "artist"
+)
+
+func (e *FavoriteEntity) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = FavoriteEntity(s)
+	case string:
+		*e = FavoriteEntity(s)
+	default:
+		return fmt.Errorf("unsupported scan type for FavoriteEntity: %T", src)
+	}
+	return nil
+}
+
+type NullFavoriteEntity struct {
+	FavoriteEntity FavoriteEntity
+	Valid          bool // Valid is true if FavoriteEntity is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullFavoriteEntity) Scan(value interface{}) error {
+	if value == nil {
+		ns.FavoriteEntity, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.FavoriteEntity.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullFavoriteEntity) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.FavoriteEntity), nil
+}
+
 type JobState string
 
 const (
@@ -132,6 +175,13 @@ type CoverArt struct {
 	CreatedAt time.Time
 }
 
+type Favorite struct {
+	UserID     uuid.UUID
+	EntityType FavoriteEntity
+	EntityID   uuid.UUID
+	CreatedAt  time.Time
+}
+
 type Genre struct {
 	ID   uuid.UUID
 	Name string
@@ -162,6 +212,33 @@ type LibraryRoot struct {
 	LastScanFinishedAt pgtype.Timestamptz
 	LastScanError      *string
 	CreatedAt          time.Time
+}
+
+type Play struct {
+	ID       uuid.UUID
+	UserID   uuid.UUID
+	TrackID  pgtype.UUID
+	PlayedAt time.Time
+	MsPlayed int32
+	Source   string
+}
+
+type Playlist struct {
+	ID          uuid.UUID
+	UserID      uuid.UUID
+	Name        string
+	Description string
+	Public      bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+type PlaylistTrack struct {
+	ID         uuid.UUID
+	PlaylistID uuid.UUID
+	TrackID    uuid.UUID
+	Position   int32
+	AddedAt    time.Time
 }
 
 type Session struct {
