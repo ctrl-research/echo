@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jonathanng/echo/internal/auth"
 	"github.com/jonathanng/echo/internal/db/dbgen"
 )
 
@@ -42,6 +43,9 @@ type TrackDTO struct {
 	CoverArtID  string   `json:"coverArtId,omitempty" required:"false"`
 	// Overridden reports whether any field has a user correction applied.
 	Overridden bool `json:"overridden"`
+	// Favorite is per-caller: the same track is favourited for one user and
+	// not another.
+	Favorite bool `json:"favorite"`
 }
 
 type AlbumDTO struct {
@@ -216,7 +220,7 @@ func (s *Server) handleListTracks(ctx context.Context, in *ListTracksInput) (*Li
 	}
 	limit := clampLimit(in.Limit)
 
-	params := dbgen.ListTracksParams{Limit: int32(limit + 1)}
+	params := dbgen.ListTracksParams{Limit: int32(limit + 1), UserID: auth.FromContext(ctx).UserID}
 	if in.ArtistID != "" {
 		id, err := uuid.Parse(in.ArtistID)
 		if err != nil {
@@ -256,7 +260,9 @@ func (s *Server) handleListTracks(ctx context.Context, in *ListTracksInput) (*Li
 	out := &ListTracksOutput{}
 	out.Body.Tracks = make([]TrackDTO, 0, len(rows))
 	for _, r := range rows {
-		out.Body.Tracks = append(out.Body.Tracks, fromListRow(r).dto(false))
+		dto := fromListRow(r).dto(false)
+		dto.Favorite = r.Favorite
+		out.Body.Tracks = append(out.Body.Tracks, dto)
 	}
 	out.Body.NextCursor = next
 	return out, nil
@@ -275,7 +281,9 @@ func (s *Server) handleGetTrack(ctx context.Context, in *TrackIDInput) (*TrackOu
 	if err != nil {
 		return nil, huma.Error422UnprocessableEntity("Malformed track id")
 	}
-	row, err := s.queries.GetTrack(ctx, id)
+	row, err := s.queries.GetTrack(ctx, dbgen.GetTrackParams{
+		ID: id, UserID: auth.FromContext(ctx).UserID,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, huma.Error404NotFound("No such track")
@@ -295,7 +303,9 @@ func (s *Server) handleGetTrack(ctx context.Context, in *TrackIDInput) (*TrackOu
 		DurationMs: row.DurationMs, Bitrate: row.Bitrate, Suffix: row.Suffix,
 		CoverArtID: row.CoverArtID,
 	}
-	return &TrackOutput{Body: tr.dto(overridden)}, nil
+	dto := tr.dto(overridden)
+	dto.Favorite = row.Favorite
+	return &TrackOutput{Body: dto}, nil
 }
 
 func (s *Server) hasOverride(ctx context.Context, trackID uuid.UUID) (bool, error) {
@@ -328,7 +338,9 @@ func (s *Server) handleUpdateTrack(ctx context.Context, in *UpdateTrackInput) (*
 	if err != nil {
 		return nil, huma.Error422UnprocessableEntity("Malformed track id")
 	}
-	if _, err := s.queries.GetTrack(ctx, id); err != nil {
+	if _, err := s.queries.GetTrack(ctx, dbgen.GetTrackParams{
+		ID: id, UserID: auth.FromContext(ctx).UserID,
+	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, huma.Error404NotFound("No such track")
 		}
@@ -501,7 +513,10 @@ func (s *Server) handleGetAlbum(ctx context.Context, in *AlbumIDInput) (*GetAlbu
 		s.deps.Log.Error("get album failed", "error", err)
 		return nil, huma.Error500InternalServerError("Could not load album")
 	}
-	tracks, err := s.queries.ListAlbumTracks(ctx, pgtype.UUID{Bytes: id, Valid: true})
+	tracks, err := s.queries.ListAlbumTracks(ctx, dbgen.ListAlbumTracksParams{
+		AlbumID: pgtype.UUID{Bytes: id, Valid: true},
+		UserID:  auth.FromContext(ctx).UserID,
+	})
 	if err != nil {
 		s.deps.Log.Error("list album tracks failed", "error", err)
 		return nil, huma.Error500InternalServerError("Could not load album tracks")
@@ -523,7 +538,9 @@ func (s *Server) handleGetAlbum(ctx context.Context, in *AlbumIDInput) (*GetAlbu
 			DurationMs: r.DurationMs, Bitrate: r.Bitrate, Suffix: r.Suffix,
 			CoverArtID: r.CoverArtID,
 		}
-		out.Body.Tracks = append(out.Body.Tracks, tr.dto(false))
+		dto := tr.dto(false)
+		dto.Favorite = r.Favorite
+		out.Body.Tracks = append(out.Body.Tracks, dto)
 	}
 	return out, nil
 }

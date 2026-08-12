@@ -737,7 +737,7 @@ lifecycle.
 | **M2** ✅ | Scanner. Walk, tag read, art extraction, move detection, fsnotify, `SKIP LOCKED` job queue | 50k-track library scans; moves preserve IDs; playback unaffected during a scan |
 | **M3** ✅ | Library API + search. tsvector + trigram, facets, keyset pagination, overrides | Filter by genre/artist/album; `radiohed` finds Radiohead; edits persist to overrides |
 | **M4** ✅ | Streaming + player. ServeContent, transcode cache, React shell, virtualized lists, Media Session | Full playback with seeking on desktop and mobile browsers |
-| **M5** | Playlists, favorites, history | Per-user state working across two accounts |
+| **M5** ✅ | Playlists, favorites, history | Per-user state working across two accounts |
 | **M6** | YouTube. Search, download-to-cache, TTL janitor, promote | Play a YouTube result; it expires on schedule; promotion survives eviction |
 | **M7** | PWA offline. Workbox, Cache API audio, Range-slicing SW, quota UI | Airplane mode plays marked albums, seeking included |
 | **M8** | Polish. Admin UI, transcode profiles, scrobble targets, keyboard shortcuts | — |
@@ -751,9 +751,11 @@ the exact migration this ordering avoids.
 1. **Transcode policy** — transcode only on codec incompatibility, or also
    offer a "data saver" profile for mobile? Affects whether transcode profiles
    are per-user settings.
-2. **Play-count semantics** — what fraction of a track counts as a play?
-   Last.fm's rule (50% or 4 minutes) is a reasonable default.
+2. ~~**Play-count semantics**~~ — settled: Last.fm's rule, half the track or
+   four minutes, whichever comes first, validated server-side against the
+   duration Echo knows rather than one the client reports.
 3. **Compilation handling** — `albumartist` is unreliable in the wild. Group by
    folder as a fallback signal, or trust tags and accept fragmentation?
-4. **Scrobbling** — is forwarding to Last.fm / ListenBrainz wanted, or is local
-   history enough?
+4. **Scrobbling** — deferred. History is local for now; the `plays` table
+   already carries what an external service would need, so adding it later
+   needs no schema change.

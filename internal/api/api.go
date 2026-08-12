@@ -118,6 +118,7 @@ func New(deps Deps) *Server {
 	s.registerUsers()
 	s.registerLibraryAdmin()
 	s.registerBrowse()
+	s.registerPlaylists()
 	// Raw-bytes routes live on chi but are documented in the same spec.
 	s.registerMedia(apiRouter)
 	documentMediaRoutes(s.API)

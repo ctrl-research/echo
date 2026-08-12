@@ -94,10 +94,18 @@ const getTrack = `-- name: GetTrack :one
 SELECT te.id, te.root_id, te.rel_path, te.size, te.mtime, te.content_hash, te.duration_ms, te.bitrate, te.sample_rate, te.channels, te.codec, te.suffix, te.album_id, te.artist_id, te.album_artist_id, te.cover_art_id, te.missing_at, te.created_at, te.updated_at, te.title, te.track_no, te.disc_no, te.year, te.artist_name, te.album_name, te.album_artist_name,
        (SELECT COALESCE(array_agg(g.name ORDER BY g.name), '{}')
         FROM track_genres tg JOIN genres g ON g.id = tg.genre_id
-        WHERE tg.track_id = te.id)::text[] AS genres
+        WHERE tg.track_id = te.id)::text[] AS genres,
+       EXISTS (SELECT 1 FROM favorites f
+               WHERE f.user_id = $1 AND f.entity_type = 'track'
+                 AND f.entity_id = te.id) AS favorite
 FROM tracks_effective te
-WHERE te.id = $1
+WHERE te.id = $2
 `
+
+type GetTrackParams struct {
+	UserID uuid.UUID
+	ID     uuid.UUID
+}
 
 type GetTrackRow struct {
 	ID              uuid.UUID
@@ -127,10 +135,11 @@ type GetTrackRow struct {
 	AlbumName       string
 	AlbumArtistName string
 	Genres          []string
+	Favorite        bool
 }
 
-func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (GetTrackRow, error) {
-	row := q.db.QueryRow(ctx, getTrack, id)
+func (q *Queries) GetTrack(ctx context.Context, arg GetTrackParams) (GetTrackRow, error) {
+	row := q.db.QueryRow(ctx, getTrack, arg.UserID, arg.ID)
 	var i GetTrackRow
 	err := row.Scan(
 		&i.ID,
@@ -160,6 +169,7 @@ func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (GetTrackRow, erro
 		&i.AlbumName,
 		&i.AlbumArtistName,
 		&i.Genres,
+		&i.Favorite,
 	)
 	return i, err
 }
@@ -168,11 +178,19 @@ const listAlbumTracks = `-- name: ListAlbumTracks :many
 SELECT te.id, te.root_id, te.rel_path, te.size, te.mtime, te.content_hash, te.duration_ms, te.bitrate, te.sample_rate, te.channels, te.codec, te.suffix, te.album_id, te.artist_id, te.album_artist_id, te.cover_art_id, te.missing_at, te.created_at, te.updated_at, te.title, te.track_no, te.disc_no, te.year, te.artist_name, te.album_name, te.album_artist_name,
        (SELECT COALESCE(array_agg(g.name ORDER BY g.name), '{}')
         FROM track_genres tg JOIN genres g ON g.id = tg.genre_id
-        WHERE tg.track_id = te.id)::text[] AS genres
+        WHERE tg.track_id = te.id)::text[] AS genres,
+       EXISTS (SELECT 1 FROM favorites f
+               WHERE f.user_id = $1 AND f.entity_type = 'track'
+                 AND f.entity_id = te.id) AS favorite
 FROM tracks_effective te
-WHERE te.album_id = $1 AND te.missing_at IS NULL
+WHERE te.album_id = $2 AND te.missing_at IS NULL
 ORDER BY COALESCE(te.disc_no, 1), COALESCE(te.track_no, 0), lower(te.title)
 `
+
+type ListAlbumTracksParams struct {
+	UserID  uuid.UUID
+	AlbumID pgtype.UUID
+}
 
 type ListAlbumTracksRow struct {
 	ID              uuid.UUID
@@ -202,11 +220,12 @@ type ListAlbumTracksRow struct {
 	AlbumName       string
 	AlbumArtistName string
 	Genres          []string
+	Favorite        bool
 }
 
 // Disc then track number, which is the only order an album makes sense in.
-func (q *Queries) ListAlbumTracks(ctx context.Context, albumID pgtype.UUID) ([]ListAlbumTracksRow, error) {
-	rows, err := q.db.Query(ctx, listAlbumTracks, albumID)
+func (q *Queries) ListAlbumTracks(ctx context.Context, arg ListAlbumTracksParams) ([]ListAlbumTracksRow, error) {
+	rows, err := q.db.Query(ctx, listAlbumTracks, arg.UserID, arg.AlbumID)
 	if err != nil {
 		return nil, err
 	}
@@ -242,6 +261,7 @@ func (q *Queries) ListAlbumTracks(ctx context.Context, albumID pgtype.UUID) ([]L
 			&i.AlbumName,
 			&i.AlbumArtistName,
 			&i.Genres,
+			&i.Favorite,
 		); err != nil {
 			return nil, err
 		}
@@ -429,25 +449,29 @@ const listTracks = `-- name: ListTracks :many
 SELECT te.id, te.root_id, te.rel_path, te.size, te.mtime, te.content_hash, te.duration_ms, te.bitrate, te.sample_rate, te.channels, te.codec, te.suffix, te.album_id, te.artist_id, te.album_artist_id, te.cover_art_id, te.missing_at, te.created_at, te.updated_at, te.title, te.track_no, te.disc_no, te.year, te.artist_name, te.album_name, te.album_artist_name,
        (SELECT COALESCE(array_agg(g.name ORDER BY g.name), '{}')
         FROM track_genres tg JOIN genres g ON g.id = tg.genre_id
-        WHERE tg.track_id = te.id)::text[] AS genres
+        WHERE tg.track_id = te.id)::text[] AS genres,
+       EXISTS (SELECT 1 FROM favorites f
+               WHERE f.user_id = $2 AND f.entity_type = 'track'
+                 AND f.entity_id = te.id) AS favorite
 FROM tracks_effective te
 WHERE te.missing_at IS NULL
-  AND ($2::uuid IS NULL
-       OR te.artist_id = $2::uuid
-       OR te.album_artist_id = $2::uuid)
-  AND ($3::uuid IS NULL OR te.album_id = $3::uuid)
-  AND ($4::int IS NULL OR te.year = $4::int)
-  AND ($5::text IS NULL OR EXISTS (
+  AND ($3::uuid IS NULL
+       OR te.artist_id = $3::uuid
+       OR te.album_artist_id = $3::uuid)
+  AND ($4::uuid IS NULL OR te.album_id = $4::uuid)
+  AND ($5::int IS NULL OR te.year = $5::int)
+  AND ($6::text IS NULL OR EXISTS (
         SELECT 1 FROM track_genres tg JOIN genres g ON g.id = tg.genre_id
-        WHERE tg.track_id = te.id AND g.name = $5::citext))
-  AND ($6::text IS NULL
-       OR (lower(te.title), te.id) > ($6::text, $7::uuid))
+        WHERE tg.track_id = te.id AND g.name = $6::citext))
+  AND ($7::text IS NULL
+       OR (lower(te.title), te.id) > ($7::text, $8::uuid))
 ORDER BY lower(te.title), te.id
 LIMIT $1
 `
 
 type ListTracksParams struct {
 	Limit      int32
+	UserID     uuid.UUID
 	ArtistID   pgtype.UUID
 	AlbumID    pgtype.UUID
 	Year       *int32
@@ -484,6 +508,7 @@ type ListTracksRow struct {
 	AlbumName       string
 	AlbumArtistName string
 	Genres          []string
+	Favorite        bool
 }
 
 // Read paths for browsing and searching the library.
@@ -502,6 +527,7 @@ type ListTracksRow struct {
 func (q *Queries) ListTracks(ctx context.Context, arg ListTracksParams) ([]ListTracksRow, error) {
 	rows, err := q.db.Query(ctx, listTracks,
 		arg.Limit,
+		arg.UserID,
 		arg.ArtistID,
 		arg.AlbumID,
 		arg.Year,
@@ -544,6 +570,7 @@ func (q *Queries) ListTracks(ctx context.Context, arg ListTracksParams) ([]ListT
 			&i.AlbumName,
 			&i.AlbumArtistName,
 			&i.Genres,
+			&i.Favorite,
 		); err != nil {
 			return nil, err
 		}

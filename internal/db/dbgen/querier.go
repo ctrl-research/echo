@@ -13,10 +13,18 @@ import (
 )
 
 type Querier interface {
+	// ---- favorites ------------------------------------------------------------------
+	AddFavorite(ctx context.Context, arg AddFavoriteParams) error
+	// Appends at the end. The position is computed in the same statement so two
+	// concurrent adds cannot both read the same max and collide.
+	AppendPlaylistTrack(ctx context.Context, arg AppendPlaylistTrackParams) (PlaylistTrack, error)
 	// The canonical multi-worker claim. SKIP LOCKED lets every worker drain the
 	// queue concurrently without contending on the same row or double-claiming.
 	ClaimJob(ctx context.Context) (Job, error)
 	ClearTrackOverride(ctx context.Context, trackID uuid.UUID) error
+	// Renumbers from zero after a removal, so positions stay dense and the next
+	// append lands where it should.
+	CompactPlaylistPositions(ctx context.Context, playlistID uuid.UUID) error
 	// Clearing dedupe_key on completion lets the same logical work be enqueued
 	// again later; leaving it would make the unique index reject every future
 	// enqueue for that key.
@@ -24,9 +32,12 @@ type Querier interface {
 	// Guards the last-admin check. Counts only admins who can still sign in.
 	CountActiveAdmins(ctx context.Context) (int64, error)
 	CountJobsByState(ctx context.Context) ([]CountJobsByStateRow, error)
+	CountPlaylistTracks(ctx context.Context, playlistID uuid.UUID) (int64, error)
 	// ---- counts -----------------------------------------------------------------
 	CountTracks(ctx context.Context) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
+	// ---- playlists ----------------------------------------------------------------
+	CreatePlaylist(ctx context.Context, arg CreatePlaylistParams) (Playlist, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteExpiredSessions(ctx context.Context) (int64, error)
@@ -43,6 +54,7 @@ type Querier interface {
 	// Rows that no track references any more. Cover art is content-addressed and
 	// shared, so it can only be removed once nothing points at it.
 	DeleteOrphanedCoverArt(ctx context.Context) ([]string, error)
+	DeletePlaylist(ctx context.Context, arg DeletePlaylistParams) (int64, error)
 	DeleteSession(ctx context.Context, id uuid.UUID) error
 	DeleteSessionsForUser(ctx context.Context, userID uuid.UUID) error
 	DeleteUser(ctx context.Context, id uuid.UUID) (int64, error)
@@ -65,12 +77,16 @@ type Querier interface {
 	GetCoverArt(ctx context.Context, id uuid.UUID) (GetCoverArtRow, error)
 	GetJob(ctx context.Context, id uuid.UUID) (Job, error)
 	GetLibraryRoot(ctx context.Context, id uuid.UUID) (LibraryRoot, error)
+	GetPlaylist(ctx context.Context, arg GetPlaylistParams) (GetPlaylistRow, error)
 	// Resolves a bearer token to its session and owner in one round trip, and
 	// filters out expired sessions and disabled accounts so callers cannot forget
 	// to. Returning no row is the only "not authenticated" signal handlers need.
 	GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (GetSessionByTokenHashRow, error)
-	GetTrack(ctx context.Context, id uuid.UUID) (GetTrackRow, error)
+	GetTrack(ctx context.Context, arg GetTrackParams) (GetTrackRow, error)
 	GetTrackByPath(ctx context.Context, arg GetTrackByPathParams) (Track, error)
+	// Duration is needed server-side to decide whether a reported play qualifies;
+	// trusting the client's number would let anyone inflate their own counts.
+	GetTrackDuration(ctx context.Context, id uuid.UUID) (*int32, error)
 	// Everything needed to serve one track's bytes, in a single round trip: the
 	// root path and relative path that locate the file, plus the metadata the
 	// response headers need.
@@ -81,6 +97,7 @@ type Querier interface {
 	// even when the user changes their email address at the provider.
 	GetUserByGoogleSub(ctx context.Context, googleSub *string) (User, error)
 	GetUserByOIDCSub(ctx context.Context, oidcSub *string) (User, error)
+	IsFavorite(ctx context.Context, arg IsFavoriteParams) (bool, error)
 	LibraryStats(ctx context.Context) (LibraryStatsRow, error)
 	// Attaches a provider subject to an account found by email, so that signing in
 	// with Google and then with a self-hosted IdP lands on one account rather than
@@ -89,17 +106,27 @@ type Querier interface {
 	LinkGoogleSub(ctx context.Context, arg LinkGoogleSubParams) (User, error)
 	LinkOIDCSub(ctx context.Context, arg LinkOIDCSubParams) (User, error)
 	// Disc then track number, which is the only order an album makes sense in.
-	ListAlbumTracks(ctx context.Context, albumID pgtype.UUID) ([]ListAlbumTracksRow, error)
+	ListAlbumTracks(ctx context.Context, arg ListAlbumTracksParams) ([]ListAlbumTracksRow, error)
 	// ---- albums -------------------------------------------------------------------
 	ListAlbums(ctx context.Context, arg ListAlbumsParams) ([]ListAlbumsRow, error)
 	// ---- artists ------------------------------------------------------------------
 	// Only artists with at least one live track: reconciliation can leave rows
 	// behind, and a browse list full of entries that match nothing is noise.
 	ListArtists(ctx context.Context, arg ListArtistsParams) ([]ListArtistsRow, error)
+	ListFavoriteTracks(ctx context.Context, arg ListFavoriteTracksParams) ([]ListFavoriteTracksRow, error)
 	// ---- genres -------------------------------------------------------------------
 	ListGenres(ctx context.Context) ([]ListGenresRow, error)
+	ListHistory(ctx context.Context, arg ListHistoryParams) ([]ListHistoryRow, error)
 	ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, error)
 	ListLibraryRoots(ctx context.Context) ([]LibraryRoot, error)
+	// ---- playlist contents ----------------------------------------------------------
+	// Missing tracks are kept in the listing rather than filtered out: a playlist
+	// entry pointing at an unmounted drive should show as unavailable, not silently
+	// vanish and leave the owner wondering what they deleted.
+	ListPlaylistTracks(ctx context.Context, arg ListPlaylistTracksParams) ([]ListPlaylistTracksRow, error)
+	// Own playlists, plus anyone's public ones. Ownership is returned so the client
+	// can tell which are editable without a second lookup.
+	ListPlaylists(ctx context.Context, userID uuid.UUID) ([]ListPlaylistsRow, error)
 	// ---- tracks -----------------------------------------------------------------
 	// Returns just enough to decide whether a file changed, without loading whole
 	// rows for a library that is mostly unchanged.
@@ -125,12 +152,25 @@ type Querier interface {
 	// Relocating a track keeps its id, and therefore its playlist entries and play
 	// history, across a library reorganisation.
 	MoveTrack(ctx context.Context, arg MoveTrackParams) (Track, error)
+	// Adding a track that is already present is allowed, but only deliberately:
+	// the API refuses it unless the caller confirms, so a mis-click cannot quietly
+	// duplicate an entry.
+	PlaylistContainsTrack(ctx context.Context, arg PlaylistContainsTrackParams) (bool, error)
+	PlaylistIsOwnedBy(ctx context.Context, arg PlaylistIsOwnedByParams) (bool, error)
 	// Rebuilds a track's search text from its effective values.
 	//
 	// This is the single definition of the haystack, used by both the scanner and
 	// the override editor. Assembling it in Go as well would let the two drift, and
 	// the symptom would be a track that is unfindable by the name shown for it.
 	RebuildTrackSearch(ctx context.Context, id uuid.UUID) error
+	// ---- plays ------------------------------------------------------------------------
+	RecordPlay(ctx context.Context, arg RecordPlayParams) (Play, error)
+	RemoveFavorite(ctx context.Context, arg RemoveFavoriteParams) (int64, error)
+	RemovePlaylistTrack(ctx context.Context, arg RemovePlaylistTrackParams) (int64, error)
+	// Applies a whole new order in one statement. The unique constraint on
+	// (playlist_id, position) is deferrable precisely so this can pass through
+	// intermediate states where two rows briefly share a position.
+	ReorderPlaylist(ctx context.Context, arg ReorderPlaylistParams) error
 	ReplaceTrackGenres(ctx context.Context, arg ReplaceTrackGenresParams) error
 	// Requeues jobs left 'running' by a process that died. Without this a crash
 	// during a scan strands the work forever, since nothing else revisits a row
@@ -162,8 +202,13 @@ type Querier interface {
 	// genuine readiness probe, since it proves a round trip rather than just a
 	// reachable socket the way Ping does.
 	ServerTime(ctx context.Context) (time.Time, error)
+	TopTracks(ctx context.Context, arg TopTracksParams) ([]TopTracksRow, error)
 	// Throttled by the caller to avoid a write on every request.
 	TouchSession(ctx context.Context, id uuid.UUID) error
+	TrackPlayStats(ctx context.Context, arg TrackPlayStatsParams) (TrackPlayStatsRow, error)
+	// Scoped by user_id so a non-owner's update silently matches nothing rather
+	// than needing a separate ownership check that a caller could forget.
+	UpdatePlaylist(ctx context.Context, arg UpdatePlaylistParams) (Playlist, error)
 	// Refreshes the profile fields an IdP owns on every sign-in, so a renamed or
 	// re-avatared account stays current without a separate sync.
 	UpdateProfile(ctx context.Context, arg UpdateProfileParams) (User, error)

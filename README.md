@@ -5,8 +5,8 @@ short-lived cache, and runs as an installable PWA with offline playback.
 
 Design and rationale: [`docs/design.md`](docs/design.md).
 
-**Status: M4.** Authentication (Google + OIDC), the library scanner, the library
-API, and playback — range-request streaming, a queue, and a working player UI.
+**Status: M5.** Authentication (Google + OIDC), the library scanner, the library
+API, playback, and per-user state — playlists, favourites, and play history.
 
 ## Stack
 
@@ -61,7 +61,8 @@ make help              List all targets
 make build             Server with the client embedded
 make build-server      Server only, no Node required
 make generate          Run sqlc and regenerate client API types
-make test              Unit tests
+make test              Go unit tests
+make test-web          Client tests (player queue logic)
 make test-integration  Integration tests (needs a Docker daemon)
 make lint              go vet in both build configurations, plus gofmt
 make migration name=x  Scaffold a new migration
@@ -167,6 +168,43 @@ reverts to the file's own tags.
 Everything except `/health`, `/auth/providers`, and `/auth/login` requires a
 session. Authorisation is default-deny: a new endpoint is private until it is
 deliberately added to the public allowlist.
+
+## Shuffle
+
+Shuffle is an **order**, not a dice roll per track. Picking at random each time
+plays the same song twice in a row often enough to be irritating, and can play
+one track three times before others have played at all.
+
+Enabling shuffle builds a permutation anchored on whatever is playing, so it
+never interrupts the current track. Advancing walks that permutation, which
+guarantees every track plays once before any plays twice. At the end of a cycle
+with repeat-all it reshuffles, keeping the track that just finished out of first
+place so the wrap is not a consecutive repeat either. Repeat-one still repeats —
+that is a listener asking for it.
+
+## Playlists, favourites, and history
+
+Playlists are private by default and can be shared read-only: a public playlist
+is visible to any signed-in user, but only its owner can change it. Entries are
+identified by their own id rather than by track, so the same song can appear
+twice — and removing one of them removes the right one.
+
+Adding a track that is already in a playlist is refused with `409` unless the
+request sets `allowDuplicate`; the client turns that into a confirmation dialog.
+A set can repeat a song deliberately, but it should be a decision rather than
+the silent result of a mis-click. When a playlist does hold a song twice, the
+now-playing highlight follows the **position** rather than the track, so exactly
+one row lights up.
+
+Favourites and play history are strictly per-user. The favourite flag on a track
+listing reflects the caller, so two people browsing the same library see their
+own hearts.
+
+A play counts once it passes **half the track or four minutes, whichever comes
+first** — Last.fm's rule, so counts stay comparable if history is ever forwarded
+elsewhere. The threshold is checked against the duration the server knows, not
+one the client reports, so nobody can inflate their own counts. Plays outlive
+their tracks: deleting a file does not erase the fact that it was listened to.
 
 ## Library scanning
 
