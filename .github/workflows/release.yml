@@ -5,11 +5,18 @@ name: Release
 # Separate from ci.yml deliberately: CI builds the image on every pull request
 # to prove it still builds, and must never push. This workflow only runs where
 # pushing is correct — a merge to main, or a version tag.
+#
+# Every merge to main cuts a release. The next version is derived from the
+# commits since the last v* tag — `feat:` moves the minor, anything else moves
+# the patch — and the tag is created here rather than by hand, so the image
+# always carries a real semver instead of a floating branch name. Pushing a v*
+# tag manually still works and takes its version from the tag.
 on:
   push:
     branches: [main]
     tags: ["v*"]
-  # So a broken publish can be retried without an empty commit.
+  # So a broken publish can be retried without an empty commit. Note this
+  # consumes a version number: a dispatch on main cuts the next release.
   workflow_dispatch:
 
 concurrency:
@@ -25,12 +32,67 @@ jobs:
     name: Publish image
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # write, not read: this workflow creates the version tag it publishes.
+      contents: write
       # Required for pushing to GHCR with GITHUB_TOKEN. Without it the push
       # fails with a 403 that reads like a credential problem.
       packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The version comes from the tag list and the commits since the most
+          # recent one. Neither exists in the default shallow clone.
+          fetch-depth: 0
+
+      - name: Resolve the version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            # A hand-pushed tag already is the version. Nothing to compute,
+            # and nothing to create.
+            version="${GITHUB_REF_NAME#v}"
+            echo "create_tag=false" >> "$GITHUB_OUTPUT"
+          else
+            latest=$(git tag -l 'v*' --sort=-v:refname | head -1)
+            if [ -z "$latest" ]; then
+              # First release. 0.1.0 rather than 0.0.1 because the deployment
+              # already pins 0.1.0, and the first cut of a working service is
+              # not a patch on nothing.
+              version=0.1.0
+            else
+              IFS=. read -r major minor patch <<<"${latest#v}"
+              log=$(git log --format='%B' "$latest..HEAD")
+
+              if grep -qE '^(BREAKING CHANGE|BREAKING-CHANGE):' <<<"$log" \
+                || grep -qE '^[a-z]+(\([^)]*\))?!:' <<<"$log"; then
+                if [ "$major" -eq 0 ]; then
+                  # Pre-1.0 a breaking change moves the minor. Declaring 1.0.0
+                  # should be a deliberate act, not a side effect of how a
+                  # commit message was written.
+                  minor=$((minor + 1)); patch=0
+                else
+                  major=$((major + 1)); minor=0; patch=0
+                fi
+              elif grep -qE '^feat(\([^)]*\))?:' <<<"$log"; then
+                minor=$((minor + 1)); patch=0
+              else
+                # Default to a patch rather than skipping the release. Not
+                # every commit here is written as a conventional one, and a
+                # merge to main that publishes nothing is the more confusing
+                # outcome.
+                patch=$((patch + 1))
+              fi
+              version="$major.$minor.$patch"
+            fi
+            echo "create_tag=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "major_minor=${version%.*}" >> "$GITHUB_OUTPUT"
+          echo "Publishing $version" >> "$GITHUB_STEP_SUMMARY"
 
       # arm64 is emulated only for the runtime stage; the Go build and the web
       # build run natively on the runner and cross-compile.
@@ -50,15 +112,18 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+          # The version is resolved above for both trigger types, so it is
+          # passed as a raw value rather than left to type=semver, which only
+          # fires on a tag push.
           tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.major_minor }}
             type=sha,format=long
             type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.title=Echo
             org.opencontainers.image.description=Self-hosted music server with local library and YouTube streaming
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
 
       - uses: docker/build-push-action@v6
         with:
@@ -70,7 +135,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ github.ref_type == 'tag' && github.ref_name || format('main-{0}', github.sha) }}
+            VERSION=v${{ steps.version.outputs.version }}
             COMMIT=${{ github.sha }}
             DATE=${{ github.event.repository.updated_at }}
           cache-from: type=gha
@@ -80,6 +145,18 @@ jobs:
           # platform. A plain multi-arch index is the predictable choice.
           provenance: false
           sbom: false
+
+      - name: Tag the release
+        # After the image is pushed, not before: a failed build should not burn
+        # a version number. Tags pushed with GITHUB_TOKEN do not trigger
+        # workflows, so this cannot re-enter Release and build twice.
+        if: steps.version.outputs.create_tag == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
 
       - name: Summary
         run: |
@@ -92,6 +169,6 @@ jobs:
             echo
             echo "Pull with:"
             echo '```sh'
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest"
+            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ steps.version.outputs.version }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
