@@ -3,15 +3,15 @@ import { buildShuffleOrder, usePlayer, type Track } from "./store";
 
 function tracks(n: number): Track[] {
   return Array.from({ length: n }, (_, i) => ({
-    id: `t${i}`,
-    title: `Track ${i}`,
-    artistName: "Artist",
-    albumName: "Album",
-    genres: [],
-    suffix: "mp3",
-    overridden: false,
-    favorite: false,
-  })) as Track[];
+    Id: `t${i}`,
+    Name: `Track ${i}`,
+    Type: "Audio",
+    // Required on BaseItemDto, unlike almost everything else on it.
+    MediaType: "Audio",
+    AlbumArtist: "Artist",
+    Album: "Album",
+    IndexNumber: i + 1,
+  })) satisfies Track[];
 }
 
 /** Plays the queue forward `steps` times, recording the index each time. */

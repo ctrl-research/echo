@@ -2,6 +2,7 @@ import { useState } from "react";
 import { imageUrl } from "../jellyfin/client";
 import { useAlbums, useAlbumTracks, type Item } from "../jellyfin/queries";
 import { useSession } from "../jellyfin/SessionProvider";
+import { usePlayer } from "../player/store";
 
 export default function Albums() {
   const [selected, setSelected] = useState<Item | null>(null);
@@ -40,6 +41,7 @@ function AlbumGrid({ onSelect }: { onSelect: (album: Item) => void }) {
 
 function AlbumDetail({ album, onBack }: { album: Item; onBack: () => void }) {
   const { data: tracks, isPending, error } = useAlbumTracks(album.Id ?? null);
+  const playQueue = usePlayer((s) => s.playQueue);
 
   return (
     <section>
@@ -59,10 +61,19 @@ function AlbumDetail({ album, onBack }: { album: Item; onBack: () => void }) {
       {error && <p className="error">Could not load these tracks.</p>}
 
       <ol className="tracks">
-        {tracks?.map((track) => (
+        {tracks?.map((track, i) => (
           <li key={track.Id}>
-            <span className="muted">{track.IndexNumber}</span>
-            <span>{track.Name}</span>
+            <button
+              type="button"
+              className="link"
+              // The whole album becomes the queue, starting here — playing a
+              // track from an album should continue into the rest of it rather
+              // than stopping at the end of the one that was tapped.
+              onClick={() => playQueue(tracks, i, album.Id ?? "")}
+            >
+              <span className="muted">{track.IndexNumber}</span>
+              <span>{track.Name}</span>
+            </button>
           </li>
         ))}
       </ol>

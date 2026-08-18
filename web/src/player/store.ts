@@ -1,7 +1,12 @@
 import { create } from "zustand";
-import type { components } from "../api/schema";
+import type { components } from "../jellyfin/schema";
 
-export type Track = components["schemas"]["TrackDTO"];
+/**
+ * Jellyfin's universal item type. Everything in the library is one of these —
+ * a track, an album, an artist — distinguished by its Type field rather than
+ * by having a type of its own.
+ */
+export type Track = components["schemas"]["BaseItemDto"];
 
 export type RepeatMode = "off" | "all" | "one";
 
@@ -221,18 +226,9 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   _sync: (patch) => set(patch),
 }));
 
-export function streamURL(trackId: string, queueId = ""): string {
-  // A YouTube item is served from the cache rather than a library root, and is
-  // keyed by video id rather than track id.
-  if (queueId.startsWith("youtube:")) {
-    return `/api/v1/youtube/${trackId}/stream`;
-  }
-  return `/api/v1/tracks/${trackId}/stream`;
-}
-
-export function artURL(coverArtId: string): string {
-  return `/api/v1/art/${coverArtId}`;
-}
+// streamURL and artURL used to live here, pointing at Echo's own API. Their
+// replacements take a session, because a Jellyfin URL needs the server and a
+// token, so they belong beside the client rather than in the queue's state.
 
 export function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";

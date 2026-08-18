@@ -1,6 +1,12 @@
-import { useEffect, useRef } from "react";
-import { api } from "../api/client";
-import { usePlayer, current, streamURL, artURL, formatTime } from "./store";
+import { useEffect, useRef, useState } from "react";
+import { audioUrl, imageUrl } from "../jellyfin/client";
+import { useSession } from "../jellyfin/SessionProvider";
+import NowPlaying from "./NowPlaying";
+import { reportProgress, reportStart, reportStopped } from "./playstate";
+import { current, formatTime, usePlayer } from "./store";
+
+/** How often to tell Jellyfin where we are. Its own clients use ten seconds. */
+const PROGRESS_INTERVAL_MS = 10_000;
 
 /**
  * The player.
@@ -13,20 +19,22 @@ import { usePlayer, current, streamURL, artURL, formatTime } from "./store";
  */
 export default function Player() {
   const audio = useRef<HTMLAudioElement>(null);
+  const { session } = useSession();
   const state = usePlayer();
   const track = current(state);
+  const [expanded, setExpanded] = useState(false);
 
   // Load a new source only when the track actually changes. Assigning src on
   // every render would restart playback constantly.
   useEffect(() => {
     const el = audio.current;
-    if (!el || !track) return;
-    const wanted = streamURL(track.id, state.queueId);
-    if (!el.src.endsWith(wanted)) {
+    if (!el || !track?.Id || !session) return;
+    const wanted = audioUrl(session, track.Id);
+    if (el.src !== wanted) {
       el.src = wanted;
       el.load();
     }
-  }, [track?.id, state.queueId]);
+  }, [track?.Id, session]);
 
   useEffect(() => {
     const el = audio.current;
@@ -38,7 +46,7 @@ export default function Player() {
     } else {
       el.pause();
     }
-  }, [state.playing, track?.id]);
+  }, [state.playing, track?.Id]);
 
   useEffect(() => {
     if (audio.current) audio.current.volume = state.volume;
@@ -47,15 +55,18 @@ export default function Player() {
   // Lock-screen and hardware controls. Without this, a phone shows no metadata
   // and the headphone buttons do nothing.
   useEffect(() => {
-    if (!("mediaSession" in navigator) || !track) return;
+    if (!("mediaSession" in navigator) || !track || !session) return;
+
+    const art =
+      track.Id && track.ImageTags?.["Primary"]
+        ? [{ src: imageUrl(session, track.Id, 512), sizes: "512x512" }]
+        : undefined;
 
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: track.title,
-      artist: track.artistName,
-      album: track.albumName,
-      artwork: track.coverArtId
-        ? [{ src: artURL(track.coverArtId), sizes: "512x512" }]
-        : undefined,
+      title: track.Name ?? "",
+      artist: track.AlbumArtist ?? "",
+      album: track.Album ?? "",
+      artwork: art,
     });
 
     const { toggle, next, previous } = usePlayer.getState();
@@ -63,111 +74,144 @@ export default function Player() {
     navigator.mediaSession.setActionHandler("pause", () => toggle());
     navigator.mediaSession.setActionHandler("nexttrack", () => next());
     navigator.mediaSession.setActionHandler("previoustrack", () => previous());
-  }, [track?.id]);
+  }, [track?.Id, session]);
 
-  // Report a play once it passes the threshold, and only once per playthrough.
-  // The server re-checks against the duration it knows, so this is a hint
-  // rather than something it trusts.
-  const reportedFor = useRef<string | null>(null);
+  // Playstate reporting. Start on a new track, progress on a timer, and stopped
+  // when the track changes or the player goes away — Jellyfin needs the last of
+  // those to close the session out, otherwise the dashboard shows this client
+  // playing something forever.
   useEffect(() => {
-    reportedFor.current = null;
-  }, [track?.id]);
+    const id = track?.Id;
+    if (!session || !id) return;
 
-  useEffect(() => {
-    // YouTube items have no library track row, so there is nothing to report
-    // a play against.
-    if (state.queueId.startsWith("youtube:")) return;
-    if (!track || reportedFor.current === track.id) return;
-    const durationSec = state.duration || (track.durationMs ?? 0) / 1000;
-    if (!durationSec) return;
+    void reportStart(session, id);
+    const timer = setInterval(() => {
+      const s = usePlayer.getState();
+      void reportProgress(session, id, s.position, !s.playing);
+    }, PROGRESS_INTERVAL_MS);
 
-    // Last.fm's rule: half the track, or four minutes, whichever comes first.
-    const needed = Math.min(durationSec / 2, 240);
-    if (state.position < needed) return;
-
-    reportedFor.current = track.id;
-    void api.POST("/plays", {
-      body: { trackId: track.id, msPlayed: Math.round(state.position * 1000) },
-    });
-  }, [state.position, track?.id, state.duration]);
+    return () => {
+      clearInterval(timer);
+      void reportStopped(session, id, usePlayer.getState().position);
+    };
+  }, [track?.Id, session]);
 
   if (!track) return null;
 
-  return (
-    <footer className="player">
-      <audio
-        ref={audio}
-        preload="metadata"
-        onTimeUpdate={(e) => state._sync({ position: e.currentTarget.currentTime })}
-        onDurationChange={(e) => state._sync({ duration: e.currentTarget.duration })}
-        onEnded={() => state.next()}
-        onPlay={() => state._sync({ playing: true })}
-        onPause={() => state._sync({ playing: false })}
-      />
+  const art =
+    session && track.Id && track.ImageTags?.["Primary"]
+      ? imageUrl(session, track.Id, 96)
+      : null;
 
-      {track.coverArtId ? (
-        <img className="player-art" src={artURL(track.coverArtId)} alt="" />
-      ) : (
-        <div className="player-art placeholder" aria-hidden />
+  return (
+    <>
+      {expanded && (
+        <NowPlaying
+          track={track}
+          playing={state.playing}
+          position={state.position}
+          duration={state.duration}
+          onClose={() => setExpanded(false)}
+        />
       )}
 
-      <div className="player-meta">
-        <strong>{track.title}</strong>
-        <span className="muted">
-          {track.artistName}
-          {track.albumName && ` — ${track.albumName}`}
-        </span>
-      </div>
-
-      <div className="player-controls">
-        <button onClick={state.previous} aria-label="Previous track">⏮</button>
-        <button onClick={state.toggle} aria-label={state.playing ? "Pause" : "Play"}>
-          {state.playing ? "⏸" : "▶"}
-        </button>
-        <button onClick={state.next} aria-label="Next track">⏭</button>
-      </div>
-
-      <div className="player-scrubber">
-        <span className="tabular">{formatTime(state.position)}</span>
-        <input
-          type="range"
-          min={0}
-          max={state.duration || 0}
-          step={0.5}
-          value={state.position}
-          aria-label="Seek"
-          onChange={(e) => {
-            const to = Number(e.target.value);
-            // Seeking is a Range request under the hood; the element issues it
-            // as soon as currentTime moves.
-            if (audio.current) audio.current.currentTime = to;
-            state._sync({ position: to });
-          }}
-        />
-        <span className="tabular">{formatTime(state.duration)}</span>
-      </div>
-
-      <div className="player-modes">
-        <button
-          onClick={state.toggleShuffle}
-          aria-pressed={state.shuffle}
-          className={state.shuffle ? "active" : ""}
-          aria-label="Shuffle"
-        >
-          🔀
-        </button>
-        <button
-          onClick={() =>
-            state.setRepeat(
-              state.repeat === "off" ? "all" : state.repeat === "all" ? "one" : "off",
-            )
+      <footer className="player">
+        <audio
+          ref={audio}
+          preload="metadata"
+          onTimeUpdate={(e) =>
+            state._sync({ position: e.currentTarget.currentTime })
           }
-          className={state.repeat !== "off" ? "active" : ""}
-          aria-label={`Repeat: ${state.repeat}`}
+          onDurationChange={(e) =>
+            state._sync({ duration: e.currentTarget.duration })
+          }
+          onEnded={() => state.next()}
+          onPlay={() => state._sync({ playing: true })}
+          onPause={() => state._sync({ playing: false })}
+        />
+
+        <button
+          type="button"
+          className="player-art-button"
+          onClick={() => setExpanded(true)}
+          aria-label="Open now playing"
         >
-          {state.repeat === "one" ? "🔂" : "🔁"}
+          {art ? (
+            <img className="player-art" src={art} alt="" />
+          ) : (
+            <div className="player-art placeholder" aria-hidden="true" />
+          )}
         </button>
-      </div>
-    </footer>
+
+        <div className="player-meta">
+          <strong>{track.Name}</strong>
+          <span className="muted">
+            {track.AlbumArtist}
+            {track.Album && ` — ${track.Album}`}
+          </span>
+        </div>
+
+        <div className="player-controls">
+          <button onClick={state.previous} aria-label="Previous track">
+            ⏮
+          </button>
+          <button
+            onClick={state.toggle}
+            aria-label={state.playing ? "Pause" : "Play"}
+          >
+            {state.playing ? "⏸" : "▶"}
+          </button>
+          <button onClick={state.next} aria-label="Next track">
+            ⏭
+          </button>
+        </div>
+
+        <div className="player-scrubber">
+          <span className="tabular">{formatTime(state.position)}</span>
+          <input
+            type="range"
+            min={0}
+            max={state.duration || 0}
+            step={0.5}
+            value={state.position}
+            aria-label="Seek"
+            onChange={(e) => {
+              const to = Number(e.target.value);
+              // Seeking is a Range request under the hood; the element issues
+              // it as soon as currentTime moves.
+              if (audio.current) audio.current.currentTime = to;
+              state._sync({ position: to });
+            }}
+          />
+          <span className="tabular">{formatTime(state.duration)}</span>
+        </div>
+
+        <div className="player-modes">
+          <button
+            onClick={state.toggleShuffle}
+            aria-pressed={state.shuffle}
+            className={state.shuffle ? "active" : ""}
+            aria-label="Shuffle"
+          >
+            🔀
+          </button>
+          <button
+            onClick={() =>
+              state.setRepeat(
+                state.repeat === "off"
+                  ? "all"
+                  : state.repeat === "all"
+                    ? "one"
+                    : "off",
+              )
+            }
+            className={state.repeat !== "off" ? "active" : ""}
+            aria-label={`Repeat: ${state.repeat}`}
+          >
+            {state.repeat === "one" ? "🔂" : "🔁"}
+          </button>
+        </div>
+      </footer>
+    </>
   );
 }
