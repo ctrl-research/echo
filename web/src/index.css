@@ -410,3 +410,104 @@ select {
   text-align: center;
   user-select: all;
 }
+
+/* --- now playing --------------------------------------------------------- */
+
+.nowplaying {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem;
+  overflow-y: auto;
+  background: Canvas;
+}
+
+.display {
+  display: grid;
+  place-items: center;
+  width: min(80vw, 22rem);
+  aspect-ratio: 1;
+  margin: 1rem 0;
+}
+
+.cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 0.5rem;
+}
+
+/* The record. A dark disc with the cover as its label, grooves suggested by a
+   repeating gradient rather than an image so it scales to any size and costs
+   no request. */
+.vinyl {
+  width: 100%;
+  height: 100%;
+}
+
+.vinyl-disc {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background:
+    repeating-radial-gradient(
+      circle at 50% 50%,
+      #0d0d0d 0 2px,
+      #171717 2px 4px
+    );
+  box-shadow: 0 6px 24px rgb(0 0 0 / 45%);
+
+  /* 33 1/3 rpm is 1.8s per rotation. Slow enough to read as a record rather
+     than a novelty. transform only, so it stays on the compositor and does not
+     repaint — this runs for the length of an album, and anything that triggers
+     layout would cost real battery on a phone. */
+  animation: vinyl-spin 1.8s linear infinite;
+  will-change: transform;
+}
+
+/* Pausing holds the angle rather than resetting it, so resuming continues from
+   where the needle was instead of snapping back to the top. */
+.vinyl[data-spinning="false"] .vinyl-disc {
+  animation-play-state: paused;
+}
+
+.vinyl-label {
+  width: 38%;
+  height: 38%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.vinyl-spindle {
+  position: absolute;
+  width: 3.5%;
+  height: 3.5%;
+  border-radius: 50%;
+  background: Canvas;
+}
+
+@keyframes vinyl-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* A permanently rotating element is exactly what this setting exists for. The
+   mode stays selectable — the record simply sits still. */
+@media (prefers-reduced-motion: reduce) {
+  .vinyl-disc {
+    animation: none;
+  }
+}
+
+.player-art-button {
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}

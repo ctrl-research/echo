@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionProvider, useSession } from "./jellyfin/SessionProvider";
 import SignIn from "./jellyfin/SignIn";
 import Albums from "./library/Albums";
+import Player from "./player/Player";
 
 // A library changes when someone edits it on the server, which is rare and
 // never urgent, so refetching on every window focus is pure noise on a phone.
@@ -37,14 +38,12 @@ function Shell() {
         <button onClick={signOut}>Sign out</button>
       </header>
 
-      {/*
-        Playback, playlists, favourites, and history land on top of this shell.
-        The previous player still targets the Go API and is kept as reference
-        until it is rebuilt against Jellyfin.
-      */}
+      {/* Playlists and favourites land on top of this shell. */}
       <main>
         <Albums />
       </main>
+
+      <Player />
     </div>
   );
 }
