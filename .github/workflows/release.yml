@@ -146,6 +146,38 @@ jobs:
           provenance: false
           sbom: false
 
+      # The client on its own, as static files behind nginx. Published as a
+      # second image rather than replacing the first: the standalone server is
+      # still on main while the client is rebuilt against Jellyfin, and the two
+      # need to be deployable independently. Shares this job so both carry the
+      # same version.
+      - id: meta-client
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE }}-client
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.major_minor }}
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=Echo Client
+            org.opencontainers.image.description=PWA client for a Jellyfin music library
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.client
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-client.outputs.tags }}
+          labels: ${{ steps.meta-client.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
+
       - name: Tag the release
         # After the image is pushed, not before: a failed build should not burn
         # a version number. Tags pushed with GITHUB_TOKEN do not trigger
