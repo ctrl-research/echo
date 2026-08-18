@@ -84,10 +84,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -97,17 +93,21 @@ jobs:
       - run: npm ci
         working-directory: web
 
-      # The client's API types are generated from the server's spec, so the
-      # spec has to be produced here rather than committed.
-      - name: Generate API types
-        run: |
-          go run ./cmd/echo openapi > openapi.yaml
-          cd web && npm run gen:api
+      # No codegen step any more. The client's types came from Echo's own
+      # OpenAPI document, which meant generating the spec here and failing on
+      # drift; they now come from Jellyfin's published spec, which is upstream
+      # and moves on its own schedule. Regenerating it here would turn an
+      # unrelated upstream release into a red build on an untouched branch, so
+      # the committed output is the pinned version and `npm run gen:jellyfin`
+      # updates it deliberately.
 
-      - name: Check generated types are current
-        run: |
-          git diff --exit-code -- web/src/api/schema.d.ts \
-            || { echo "::error::client API types are stale; run 'make types'"; exit 1; }
+      # Explicit rather than implied by the build: tsc catches what vitest
+      # cannot, since esbuild strips types without checking them. A required
+      # field missing from a test fixture passed the suite green and failed
+      # here.
+      - name: Typecheck
+        run: npx tsc -p tsconfig.app.json --noEmit
+        working-directory: web
 
       # The player's queue logic is real logic and regresses like any other.
       # Shuffle in particular had a bug that only a test would have caught.
@@ -133,5 +133,17 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The client image is what actually gets deployed, so a break in its
+      # Dockerfile or nginx config should fail here rather than on a merge to
+      # main — Release is otherwise the first thing that ever builds it.
+      - name: Build client image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.client
+          push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -53,8 +53,11 @@ openapi.yaml: $(shell find cmd internal -name '*.go' -not -name '*_test.go')
 openapi: openapi.yaml ## Regenerate the OpenAPI document
 
 .PHONY: types
-types: openapi.yaml web/node_modules ## Generate the client's TypeScript API types
-	cd web && npm run gen:api
+types: web/node_modules ## Refresh the client's Jellyfin types from the published spec
+	# Not derived from openapi.yaml any more: the client talks to Jellyfin, so
+	# its types come from Jellyfin's spec rather than this repo's. Deliberate
+	# rather than automatic — the source is upstream and moves on its own.
+	cd web && npm run gen:jellyfin
 
 ## ---- quality ---------------------------------------------------------------
 
