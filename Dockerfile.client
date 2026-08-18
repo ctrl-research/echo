@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1
+
+# The client on its own, served as static files.
+#
+# Separate from Dockerfile, which builds the standalone Go server: this image
+# has no backend, no database, and no yt-dlp — the client talks straight to a
+# Jellyfin server chosen at sign-in. Kept as a second file rather than a stage
+# in the first so the two can be built and shipped independently while the
+# pivot is in progress.
+
+# ---- build ------------------------------------------------------------------
+# Pinned to the build platform: the output is JavaScript and CSS, identical for
+# every target, so emulating this stage per architecture buys nothing.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS build
+WORKDIR /src/web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+
+# Seeds the server field on the sign-in form. Only a default — the field stays
+# editable, so an image built without it is still usable.
+ARG VITE_JELLYFIN_URL=""
+ENV VITE_JELLYFIN_URL=${VITE_JELLYFIN_URL}
+
+# vite.config.ts writes to ../internal/webui/dist, a path inherited from the
+# days when the Go binary embedded the client. Create the sibling directory so
+# the build lands somewhere predictable to copy from.
+RUN mkdir -p /src/internal/webui && npm run build
+
+# ---- runtime ----------------------------------------------------------------
+# Unprivileged variant: runs as uid 101 with no setuid helpers, so the pod needs
+# no securityContext gymnastics to satisfy runAsNonRoot.
+FROM nginxinc/nginx-unprivileged:1.29-alpine AS runtime
+
+COPY web/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /src/internal/webui/dist /usr/share/nginx/html
+
+EXPOSE 8080
