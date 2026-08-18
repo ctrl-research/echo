@@ -378,3 +378,35 @@ select {
   background: color-mix(in srgb, currentColor 18%, transparent);
   font-weight: 600;
 }
+
+/* --- sign-in ------------------------------------------------------------- */
+
+/* .tabs pushes itself right for the toolbar; in the sign-in card it should
+   span the width instead. */
+.signin-methods {
+  margin: 0.5rem 0;
+}
+
+.signin-methods button {
+  flex: 1;
+}
+
+.quickconnect {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Tabular figures and wide tracking because this is read off one screen and
+   typed into another — the failure mode is confusing characters, not running
+   out of room. */
+.code {
+  margin: 0.5rem 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: 0.25em;
+  text-align: center;
+  user-select: all;
+}

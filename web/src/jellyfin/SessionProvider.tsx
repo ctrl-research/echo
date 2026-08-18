@@ -21,6 +21,12 @@ type SessionState = {
     username: string,
     password: string,
   ) => Promise<string | null>;
+  /**
+   * Adopts a session obtained by some other means — Quick Connect today, and
+   * whatever gets added later. Every method ends at the same payload, so they
+   * converge here rather than each teaching the provider a new flow.
+   */
+  adopt: (session: Session) => void;
   signOut: () => void;
 };
 
@@ -55,14 +61,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const adopt = useCallback((s: Session) => setSession(s), []);
+
   const signOut = useCallback(() => {
     clearSession();
     setSession(null);
   }, []);
 
   const value = useMemo(
-    () => ({ session, signIn, signOut }),
-    [session, signIn, signOut],
+    () => ({ session, signIn, adopt, signOut }),
+    [session, signIn, adopt, signOut],
   );
   return <SessionContext value={value}>{children}</SessionContext>;
 }

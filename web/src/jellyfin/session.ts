@@ -85,6 +85,36 @@ export function authHeader(token?: string): string {
 
 export class AuthError extends Error {}
 
+/** Strips a trailing slash so paths can be appended without doubling it. */
+export function normalizeServer(server: string): string {
+  return server.trim().replace(/\/+$/, "");
+}
+
+/**
+ * Turns Jellyfin's AuthenticationResult into a session.
+ *
+ * Shared by every sign-in method: password, Quick Connect, and anything added
+ * later all end at the same payload, so the shape of a session should not
+ * depend on how it was obtained.
+ */
+export function sessionFrom(server: string, body: unknown): Session {
+  const result = body as {
+    AccessToken?: string;
+    User?: { Id?: string; Name?: string };
+  };
+  if (!result.AccessToken || !result.User?.Id) {
+    throw new AuthError("Server did not return a usable session");
+  }
+  const session: Session = {
+    server: normalizeServer(server),
+    token: result.AccessToken,
+    userId: result.User.Id,
+    userName: result.User.Name ?? "",
+  };
+  saveSession(session);
+  return session;
+}
+
 /**
  * Exchanges a username and password for an access token.
  *
@@ -97,7 +127,7 @@ export async function login(
   username: string,
   password: string,
 ): Promise<Session> {
-  const base = server.replace(/\/+$/, "");
+  const base = normalizeServer(server);
   const res = await fetch(`${base}/Users/AuthenticateByName`, {
     method: "POST",
     headers: {
@@ -110,20 +140,6 @@ export async function login(
   if (res.status === 401) throw new AuthError("Incorrect username or password");
   if (!res.ok) throw new AuthError(`Server returned ${res.status}`);
 
-  const body = (await res.json()) as {
-    AccessToken?: string;
-    User?: { Id?: string; Name?: string };
-  };
-  if (!body.AccessToken || !body.User?.Id) {
-    throw new AuthError("Server did not return a usable session");
-  }
-
-  const session: Session = {
-    server: base,
-    token: body.AccessToken,
-    userId: body.User.Id,
-    userName: body.User.Name ?? username,
-  };
-  saveSession(session);
-  return session;
+  const session = sessionFrom(base, await res.json());
+  return session.userName ? session : { ...session, userName: username };
 }
